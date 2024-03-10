@@ -1,0 +1,10 @@
+# Ignore Python files
+.venv
+__pycache__
+# Ignore common files
+*/utils
+!_common/*
+# Ignore .env file
+.env
+# Ignore VS Code files
+.vscode
