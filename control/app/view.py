@@ -1,26 +1,14 @@
 import consts.config as config
-from loguru import logger
 import os
+from utils.logger import Logger
 
 
-class View:
+class View(Logger):
     # TODO socket for logs from other modules
     def __init__(self) -> None:
-        logger.add(os.path.join(config.LOG_PATH, 'logging.log'))
-        # logger.add(self.process_str)
-        # logger.info('a')
-
-    def process_str(self, msg):
-        print(f'Message: {msg}')
-
-    def on_action_start(self, msg):
-        logger.info(msg)
-
-    def on_success(self, msg):
-        logger.success(msg)
-
-    def on_error(self, msg):
-        logger.error(msg)
+        super().__init__([
+            os.path.join(config.LOG_PATH, 'logging.log')
+        ])
 
     def show_log(self, num_records: int, filter: list[str], origin: list[str]):
         print(f'num_records={num_records}, filter={filter}, origin={origin}')

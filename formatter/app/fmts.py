@@ -43,6 +43,8 @@ class OutbreaksFmt(Formatter):
     
     def format_data(self, data: dict) -> dict:
         # TODO outbreak id?
+        # TODO remove fields with no value
+        # TODO nan values
         return {
             'eventId': cast(data['epi_event_id'], int), # TODO remove?
             'diseaseId': cast(data['disease_id'], int), # TODO remove?

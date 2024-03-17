@@ -1,20 +1,23 @@
 from app.model import Model
+from utils.cmd import Command
 from argparse import ArgumentParser
+import os
 
-class Command:
-    def __init__(self, cmd_id: str, model: Model):
-        self.id = cmd_id
-        self.model = model
+# class Command:
+#     def __init__(self, cmd_id: str, model: Model):
+#         self.id = cmd_id
+#         self.model = model
 
-    def set_parser(self, parser: ArgumentParser):
-        parser.set_defaults(func=self.run)
+#     def set_parser(self, parser: ArgumentParser):
+#         parser.set_defaults(func=self.run)
 
-    def run(self, args):
-        pass
+#     def run(self, args):
+#         pass
 
 class ConnectionCmd(Command):
     def __init__(self, model: Model):
-        super().__init__('conn', model)
+        super().__init__('conn')
+        self.model = model
 
     def status_func(self, args):
         self.model.connection_status()
@@ -32,7 +35,8 @@ class ConnectionCmd(Command):
 
 class SendCmd(Command):
     def __init__(self, model: Model):
-        super().__init__('send', model)
+        super().__init__('send')
+        self.model = model
 
     def set_parser(self, parser: ArgumentParser):
         super().set_parser(parser)
@@ -45,7 +49,8 @@ class SendCmd(Command):
 
 class ShowLogsCmd(Command):
     def __init__(self, model: Model):
-        super().__init__('log', model)
+        super().__init__('log')
+        self.model = model
     
     def set_parser(self, parser: ArgumentParser):
         """
@@ -61,3 +66,13 @@ class ShowLogsCmd(Command):
 
     def run(self, args):
         self.model.show_log(args.n, args.t, args.id)
+
+class QuitCmd(Command):
+    def __init__(self, model: Model):
+        super().__init__('quit') # TODO add alias
+        self.model = model
+
+    def run(self, args):
+        for conn in self.model.conns:
+            conn.close_conn()
+        os._exit(1)

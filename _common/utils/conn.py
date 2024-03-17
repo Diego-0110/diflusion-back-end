@@ -121,3 +121,28 @@ class Client:
             if not msg:
                 break
             self.handler(msg)
+
+class ConnsHandler:
+    # TODO conns status, send, recv
+    def __init__(self, conns: list[Server | Client],
+                 on_success: types.FunctionType,
+                 on_error: types.FunctionType) -> None:
+        self.conns: list[Server | Client] = conns
+        self.on_success = on_success
+        self.on_error = on_error
+
+    def _restart_conn(self, conn: Client | Server):
+        try:
+            conn.restart_conn()
+            self.on_success(conn.id)
+        except ConnectionError:
+            self.on_error(conn.id)
+
+    def restart_conns(self, ids: list[str] = []):
+        if not ids: # restart all connections
+            for conn in self.conns:
+                self._restart_conn(conn)
+        else: # restart specified connections
+            for conn in self.conns:
+                if (conn.id in ids):
+                    self._restart_conn(conn)
