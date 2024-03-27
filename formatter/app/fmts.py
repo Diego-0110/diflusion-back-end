@@ -60,7 +60,38 @@ class OutbreaksFmt(Formatter):
             'cases': cast(data['cases'], int, 0),
             'deaths': cast(data['dead'], int, 0)
         }
+import requests
+class WeatherFmt(Formatter):
+    def __init__(self) -> None:
+        super().__init__('weather')
+    def read_data(self) -> list[dict]:
+        filename = os.path.join(config.INPUT_PATH, 'weather_stations.xlsx')
+        stations = Excel(filename).read_all()
+        api_params = {
+            'lan': 'es',
+            'apid': config.WEATHER_API_KEY,
+            'll': ''
+        }
+        api_url = f'https://api.tutiempo.net/json'
+        res = []
+        for station in stations:
+            api_params['ll'] = f'{station['lat']},{station['lon']}'
+            response = requests.get(api_url, api_params)
+            if response.status_code != 200:
+                continue
+            api_data = response.json()
+            if 'error' in api_data:
+                continue
+            api_data['coords'] = [station['lat'], station['lon']]
+            res.append(api_data)
+        return res
 
+
+    def format_data(self, data: dict) -> dict:
+        return {
+            'coords': data['coords'],
+            'minTemperatures': [data[f'day{i}']['temperature_min'] for i in range(1, 8)]
+        }
 
 class MigrationsFmt(Formatter):
     def __init__(self) -> None:

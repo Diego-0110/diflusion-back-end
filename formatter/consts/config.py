@@ -12,4 +12,5 @@ LOG_PORT = int(os.getenv('FORMATTER_LOG_PORT'))
 INPUT_PATH = os.getenv('INPUT_PATH')
 OUTPUT_PATH = os.getenv('OUTPUT_PATH')
 
-# TODO env variables for database connection
+# Wheather API
+WEATHER_API_KEY = os.getenv('WEATHER_API_KEY')

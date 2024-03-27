@@ -1,9 +1,10 @@
 from app.view import View
-from app.fmts import Formatter, OutbreaksFmt, MigrationsFmt, BirdsFmt
+from app.fmts import Formatter, OutbreaksFmt, WeatherFmt, MigrationsFmt, BirdsFmt
 class Model:
     def __init__(self, view: View) -> None:
         self.fmts: list[Formatter] = [
             OutbreaksFmt(),
+            WeatherFmt(),
             MigrationsFmt(),
             BirdsFmt()
         ]
