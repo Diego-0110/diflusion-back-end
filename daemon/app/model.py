@@ -1,10 +1,15 @@
 from app.view import View
-from app.updts import Updater, OutbreaksUpdater
+from app.updts import Updater, OutbreaksUpdt, WeatherUpdt, RegionsUpdt, \
+    MigrationsUpdt, BirdsUpdt
 
 class Model:
     def __init__(self, view: View) -> None:
         self.updts: list[Updater] = [
-            OutbreaksUpdater()
+            OutbreaksUpdt(),
+            WeatherUpdt(),
+            RegionsUpdt(),
+            MigrationsUpdt(),
+            BirdsUpdt()
             # TODO add updaters
         ]
 

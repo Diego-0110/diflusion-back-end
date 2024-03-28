@@ -13,7 +13,8 @@ class Model:
                    config.FORMATTER_LOG_PORT, self.handle_log),
             Client('daemon_ctrl', config.DAEMON_HOST,
                    config.DAEMON_CTRL_PORT),
-            Client('daemon_log', config.DAEMON_HOST, 60008, self.handle_log)
+            Client('daemon_log', config.DAEMON_HOST, config.DAEMON_LOG_PORT,
+                   self.handle_log)
             # Add connections
         ]
         self.sck_daemon: socket = None

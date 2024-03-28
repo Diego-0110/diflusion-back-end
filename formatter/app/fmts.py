@@ -1,6 +1,7 @@
 from utils.data import JSON, Excel
 from utils.types import cast
 import os
+import requests
 import consts.config as config
 
 class Formatter:
@@ -60,10 +61,12 @@ class OutbreaksFmt(Formatter):
             'cases': cast(data['cases'], int, 0),
             'deaths': cast(data['dead'], int, 0)
         }
-import requests
+
+
 class WeatherFmt(Formatter):
     def __init__(self) -> None:
         super().__init__('weather')
+
     def read_data(self) -> list[dict]:
         filename = os.path.join(config.INPUT_PATH, 'weather_stations.xlsx')
         stations = Excel(filename).read_all()
@@ -75,17 +78,21 @@ class WeatherFmt(Formatter):
         api_url = f'https://api.tutiempo.net/json'
         res = []
         for station in stations:
-            api_params['ll'] = f'{station['lat']},{station['lon']}'
+            lat = station['latitud_D']
+            lon = station['longitud_D']
+            api_params['ll'] = f'{lat},{lon}'
             response = requests.get(api_url, api_params)
             if response.status_code != 200:
+                print(f'{station['id']}: code error')
                 continue
             api_data = response.json()
             if 'error' in api_data:
+                print(f'{station['id']}: {api_data['error']}')
                 continue
-            api_data['coords'] = [station['lat'], station['lon']]
+            print(f'{station['id']}: success')
+            api_data['coords'] = [lat, lon]
             res.append(api_data)
         return res
-
 
     def format_data(self, data: dict) -> dict:
         return {
@@ -103,17 +110,18 @@ class MigrationsFmt(Formatter):
 
     def format_data(self, data: dict) -> dict:
         return {
+            # TODO add id
             # 'id': cast(data['id'], int),
             'from': {
-                'countryCode': cast(data['PAIS'], str, ''),
+                'country': cast(data['PAIS'], str, ''),
                 'coords': [cast(data['Lat_A'], float),
                             cast(data['long_a'], float)],
             },
             'to': {
-                'countryCode': cast(data['PAIS2'], str, ''),
+                'country': cast(data['PAIS2'], str, ''),
                 'coords': [cast(data['LAT_R'], float),
                             cast(data['LON_R'], float)],
-                'regionId': cast(data['comarca_sg'], str, ''),
+                'region': cast(data['comarca_sg'], str, ''),
             },
             'species': cast(data['ESPECIE2'], str, '')
         }
@@ -132,7 +140,21 @@ class RegionsFmt(Formatter):
         super().__init__('regions')
     
     def read_data(self) -> list[dict]:
-        return super().read_data()
+        filename = os.path.join(config.INPUT_PATH, 'raw_regions.geojson')
+        ftCol = JSON(filename).read_all()
+        return ftCol['features']
+    
+    def format_data(self, data: dict) -> dict:
+        props = data['properties']
+        geo = data['geometry']
+        return {
+            'id': props['comarca_sg'],
+            'coords': geo['coordinates'],
+            'geoType': geo['type'],
+            'name': props['comarca'],
+            'adminDivNUT3': props['provincia'],
+            'adminDivNUT2': props['comAutonoma']
+        }
 
 
 class BirdsFmt(Formatter):

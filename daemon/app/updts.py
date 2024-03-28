@@ -20,7 +20,7 @@ class Updater:
         self.update_db(data_list)
         # TODO handle exceptions
 
-class OutbreaksUpdater(Updater):
+class OutbreaksUpdt(Updater):
     def __init__(self) -> None:
         super().__init__('outbreaks')
     
@@ -30,7 +30,7 @@ class OutbreaksUpdater(Updater):
         # TODO performance
         for outbreak in data_list:
             # TODO add id
-            neo_db.run("""CREATE (:outbreak {
+            neo_db.run("""CREATE (:Outbreak {
                     coords: $coords,
                     animalType: $animalType
             })""", outbreak)
@@ -52,3 +52,97 @@ class OutbreaksUpdater(Updater):
         mongo_th.start()
         neo4j_th.join()
         mongo_th.join()
+
+class WeatherUpdt(Updater):
+    def __init__(self) -> None:
+        super().__init__('weather')
+    
+    def update_db(self, data_list: list[dict]):
+        neo_db = Neo4jDB()
+        for weather in data_list:
+            neo_db.run("""CREATE (:Weather {
+                    coords: $coords,
+                    minTemperatures: $minTemperatures
+            })""", weather)
+
+class RegionsUpdt(Updater):
+    def __init__(self) -> None:
+        super().__init__('regions')
+    
+    def update_neo4j(self, data_list: list[dict]):
+        neo_db = Neo4jDB()
+        for region in data_list:
+            # TODO check fields
+            neo_db.run("""CREATE (:Region {
+                    id: $id,
+                    coords: $coords,
+                    geoType: $geoType
+            })""", region)
+
+    def update_mongo(self, data_list: list[dict]):
+        mongo_db = MongoDB()
+        mongo_coll = mongo_db[self.data_id]
+        mongo_coll.insert_many(data_list)
+    
+    def update_db(self, data_list: list[dict]):
+        data_list_cp = copy.deepcopy(data_list)
+        neo4j_th = threading.Thread(target=self.update_neo4j, args=(data_list,))
+        mongo_th = threading.Thread(target=self.update_mongo, 
+                                    args=(data_list_cp,))
+        neo4j_th.start()
+        mongo_th.start()
+        neo4j_th.join()
+        mongo_th.join()
+
+class MigrationsUpdt(Updater):
+    def __init__(self) -> None:
+        super().__init__('migrations')
+    
+    def update_neo4j(self, data_list: list[dict]):
+        neo_db = Neo4jDB()
+        for migration in data_list:
+            # TODO check fields: id
+            neo_db.run("""
+                CREATE (m:Migration {
+                    fromCountry: $from.country,
+                    fromCoords: $from.coords,
+                    toCountry: $to.country,
+                    toCoords: $to.coords,
+                    toRegion: $to.region
+                })
+                WITH m
+                MATCH (r:Region)
+                WHERE m.toRegion = r.id
+                MERGE (m)-[:TO]->(r)
+            """, migration)
+
+    def update_mongo(self, data_list: list[dict]):
+        mongo_db = MongoDB()
+        mongo_coll = mongo_db[self.data_id]
+        mongo_coll.insert_many(data_list)
+
+    def update_db(self, data_list: list[dict]):
+        data_list_cp = copy.deepcopy(data_list)
+        neo4j_th = threading.Thread(target=self.update_neo4j, args=(data_list,))
+        mongo_th = threading.Thread(target=self.update_mongo, 
+                                    args=(data_list_cp,))
+        neo4j_th.start()
+        mongo_th.start()
+        neo4j_th.join()
+        mongo_th.join()
+
+class BirdsUpdt(Updater):
+    def __init__(self) -> None:
+        super().__init__('birds')
+    
+    def update_db(self, data_list: list[dict]):
+        neo_db = Neo4jDB()
+        for bird in data_list:
+            # TODO check fields
+            neo_db.run("""CREATE (:migration {
+                    scientificName: $scientificName,
+                    migrationProb: $migrationProb
+            })""", bird)
+        # TODO update migrations' relations
+
+# TODO class RiskRoutesUpdt
