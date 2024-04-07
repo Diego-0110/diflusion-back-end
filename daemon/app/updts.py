@@ -72,10 +72,9 @@ class RegionsUpdt(Updater):
     def update_neo4j(self, data_list: list[dict]):
         neo_db = Neo4jDB()
         for region in data_list:
-            # TODO check fields
+            # TODO check fields: coords can't be added
             neo_db.run("""CREATE (:Region {
                     id: $id,
-                    coords: $coords,
                     geoType: $geoType
             })""", region)
 
