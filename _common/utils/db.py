@@ -1,27 +1,25 @@
 import os
-from neo4j import GraphDatabase
+from .decorators import th_sf_singleton
+from neo4j import GraphDatabase, Driver
 from pymongo import MongoClient
 
-NEO4J_URL = os.getenv('NEO4J_URL')
-NEO4J_USER = os.getenv('NEO4J_USER')
-NEO4J_PWD = os.getenv('NEO4J_PWD')
-NEO4J_DB = os.getenv('NEO4J_DB')
-
-MONGO_URL = os.getenv('MONGO_URL')
-MONGO_DB = os.getenv('MONGO_DB')
-
+@th_sf_singleton
 class Neo4jDB:
-    instance = None
-    def __new__(cls, *args, **kargs):
-        if cls.instance is None:
-            driver = GraphDatabase.driver(NEO4J_URL, auth=(NEO4J_USER, NEO4J_PWD))
-            cls.instance = driver.session(database=NEO4J_DB)
-        return cls.instance
+    def __init__(self):
+        self.clients: dict[str, Driver] = {}
+    
+    def get_client(self, url: str, user: str, pwd: str) -> Driver:
+        if self.clients.get(url) is None:
+            self.clients[url] = GraphDatabase.driver(url, auth=(user, pwd))
+        return self.clients[url]
 
+@th_sf_singleton
 class MongoDB:
-    instance = None
-    def __new__(cls, *args, **kargs):
-        if cls.instance is None:
-            client = MongoClient(MONGO_URL)
-            cls.instance = client[MONGO_DB]
-        return cls.instance
+    def __init__(self):
+        self.clients: dict[str, MongoClient] = {}
+    
+    def get_client(self, url: str) -> MongoClient:
+        if self.clients.get(url) is None:
+            self.clients[url] = MongoClient(url)
+        return self.clients[url]
+    

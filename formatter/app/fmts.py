@@ -1,8 +1,10 @@
 from utils.data import JSON, Excel
 from utils.types import cast
+from utils.scripts import get_hash_from_dict, get_sub_dict
 import os
 import requests
 import consts.config as config
+import time
 
 class Formatter:
     def __init__(self, data_id: str) -> None:
@@ -24,9 +26,22 @@ class Formatter:
 
     def run(self):
         # TODO error handling
+        # TODO progress
+        t = time.localtime()
+        current_time = time.strftime("%H:%M:%S", t)
+        print(f' {current_time} reading...')
         data_list = self.read_data()
+        t = time.localtime()
+        current_time = time.strftime("%H:%M:%S", t)
+        print(f' {current_time} formatting...')
         formatted_list = [self.format_data(data) for data in data_list]
+        t = time.localtime()
+        current_time = time.strftime("%H:%M:%S", t)
+        print(f' {current_time} saving...')
         self.save(self.filter_data(formatted_list))
+        t = time.localtime()
+        current_time = time.strftime("%H:%M:%S", t)
+        print(f' {current_time} finished')
 
 
 class OutbreaksFmt(Formatter):
@@ -43,10 +58,10 @@ class OutbreaksFmt(Formatter):
         return Excel(filename).read_all(self.filter)
     
     def format_data(self, data: dict) -> dict:
-        # TODO outbreak id?
         # TODO remove fields with no value
         # TODO nan values
-        return {
+        # TODO animalType
+        res = {
             'eventId': cast(data['epi_event_id'], int), # TODO remove?
             'diseaseId': cast(data['disease_id'], int), # TODO remove?
             'serotype': cast(data['sero_sub_genotype_eng'], str),
@@ -61,6 +76,10 @@ class OutbreaksFmt(Formatter):
             'cases': cast(data['cases'], int, 0),
             'deaths': cast(data['dead'], int, 0)
         }
+        res['id'] = get_hash_from_dict(get_sub_dict(res,
+                                                    ['serotype','coords',
+                                                     'reportDate', 'species']))
+        return res
 
 
 class WeatherFmt(Formatter):
@@ -90,15 +109,18 @@ class WeatherFmt(Formatter):
                 print(f'{station['id']}: {api_data['error']}')
                 continue
             print(f'{station['id']}: success')
-            api_data['coords'] = [lat, lon]
+            api_data['coords'] = [lon, lat]
             res.append(api_data)
         return res
 
     def format_data(self, data: dict) -> dict:
-        return {
+        res = {
+            # TODO time interval
             'coords': data['coords'],
             'minTemperatures': [data[f'day{i}']['temperature_min'] for i in range(1, 8)]
         }
+        res['id'] = get_hash_from_dict(get_sub_dict(res, ['coords']))
+        return res
 
 class MigrationsFmt(Formatter):
     def __init__(self) -> None:
@@ -109,24 +131,30 @@ class MigrationsFmt(Formatter):
         return Excel(filename).read_all()
 
     def format_data(self, data: dict) -> dict:
-        return {
-            # TODO add id
-            # 'id': cast(data['id'], int),
+        res = {
             'from': {
                 'country': cast(data['PAIS'], str, ''),
-                'coords': [cast(data['Lat_A'], float),
-                            cast(data['long_a'], float)],
+                'coords': [cast(data['long_a'], float),
+                           cast(data['Lat_A'], float)],
             },
             'to': {
                 'country': cast(data['PAIS2'], str, ''),
-                'coords': [cast(data['LAT_R'], float),
-                            cast(data['LON_R'], float)],
+                'coords': [cast(data['LON_R'], float),
+                           cast(data['LAT_R'], float)],
                 'region': cast(data['comarca_sg'], str, ''),
             },
             'species': cast(data['ESPECIE2'], str, '')
         }
+        id_dict = {
+            'toCoords': res['to']['coords'],
+            'fromCoords': res['from']['coords'],
+            'species': res['species']
+        }
+        res['id'] = get_hash_from_dict(id_dict)
+        return res
     
     def filter_data(self, data_list: list[dict]) -> list[dict]:
+        # In the same file can be repeated data
         uniques = []
         for data in data_list:
             if data not in uniques:
@@ -141,8 +169,8 @@ class RegionsFmt(Formatter):
     
     def read_data(self) -> list[dict]:
         filename = os.path.join(config.INPUT_PATH, 'raw_regions.geojson')
-        ftCol = JSON(filename).read_all()
-        return ftCol['features']
+        ft_col = JSON(filename).read_all()
+        return ft_col['features']
     
     def format_data(self, data: dict) -> dict:
         props = data['properties']
@@ -176,7 +204,10 @@ class BirdsFmt(Formatter):
         return probs
 
     def format_data(self, data: dict) -> dict:
-        return {
+        res = {
+            # TODO format birds family
             'scientificName': cast(data.get('Nombre científico'), str),
             'migrationProb': self.get_probabilities(data)
         }
+        res['id'] = get_hash_from_dict(get_sub_dict(res, ['scientificName']))
+        return res

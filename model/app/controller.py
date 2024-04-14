@@ -1,17 +1,16 @@
-from app.model import Model
 from app.view import View
-from utils.cmd import CmdExecutor
+from app.model import Model
 from utils.conn import ConnsHandler, Server
-from app.cmds import FormatCommand
+from utils.cmd import CmdExecutor
+from app.cmds import RunPredictorCmd
 import consts.config as config
 
-class Controller:
-    def __init__(self, model: Model, view: View) -> None:
+class Controller():
+    def __init__(self, model: Model, view: View):
         self.model = model
         self.view = view
         self.cmd_exec = CmdExecutor([
-            FormatCommand(self.model)
-            # Add available commands
+            RunPredictorCmd(self.model)
         ])
     
     def run(self):
@@ -22,8 +21,9 @@ class Controller:
         conns_handler.add(ctrl_server)
         ctrl_server.start()
         print('running')
-        while True:
+        while True: # main thread should be active
             cmd = input()
             if cmd == 'q':
+                self.model.task_exec.stop()
                 conns_handler.close()
                 break

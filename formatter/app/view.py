@@ -1,30 +1,23 @@
 import consts.config as config
-from loguru import logger
 import os
-from utils.conn import Server
+from utils.logger import Logger
+from utils.conn import ConnsHandler, Server, ConnectionClosedError
 
-class View:
-    # TODO socket for logs from other modules
-    def __init__(self) -> None:
-        # logger.add(os.path.join(config.LOG_PATH, 'logging.log'))
-        # logger.add(self.process_str)
-        # logger.info('a')
-        # TODO create sockets
+class View(Logger):
+    def __init__(self):
+        super().__init__([
+            self.process_str
+        ])
+        self.connsHandler = ConnsHandler()
+        self.connsHandler.set_event_handler(lambda id, msg: self.on_action_start(f'{id}: {msg}'))
+        self.connsHandler.set_success_handler(lambda id, msg: self.on_success(f'{id}: {msg}'))
+        self.connsHandler.set_error_handler(lambda id, msg: self.on_error(f'{id}: {msg}'))
         self.server = Server('logs', config.HOST, config.LOG_PORT)
+        self.connsHandler.add(self.server)
         self.server.start()
-        logger.add(self.process_str)
 
     def process_str(self, msg):
         try:
-            self.server.send_msg(msg)
-        except ConnectionError: # Ignore error
+            self.server.try_send_msg(msg)
+        except ConnectionClosedError: # Ignore error
             pass
-
-    def on_action_start(self, msg):
-        logger.info(msg)
-
-    def on_success(self, msg):
-        logger.success(msg)
-
-    def on_error(self, msg):
-        logger.error(msg)

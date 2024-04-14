@@ -1,5 +1,4 @@
 import consts.config as config
-import os
 from utils.logger import Logger
 from utils.conn import ConnsHandler, Server, ConnectionClosedError
 

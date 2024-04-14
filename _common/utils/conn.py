@@ -1,20 +1,29 @@
 import threading
 import socket
 import types
-
+from .decorators import th_sf_singleton
 class Connection:
     def __init__(self, id, host, port,
                  on_recv: types.FunctionType = None,
-                 on_info: types.FunctionType = lambda id, msg: msg,
-                 on_success: types.FunctionType = lambda id, msg: msg,
-                 on_error: types.FunctionType = lambda id, msg: msg):
+                 handle_event: types.FunctionType = lambda id, msg: msg,
+                 handle_success: types.FunctionType = lambda id, msg: msg,
+                 handle_error: types.FunctionType = lambda id, msg: msg):
         self.id = id
         self.host = host
         self.port = port
         self.on_recv = on_recv
-        self.on_info = lambda msg: on_info(self.id, msg)
-        self.on_success = lambda msg: on_success(self.id, msg)
-        self.on_error = lambda msg: on_error(self.id, msg)
+        self.handle_event = handle_event
+        self.handle_success = handle_success
+        self.handle_error = handle_error
+    
+    def on_event(self, msg: str):
+        self.handle_event(self.id, msg)
+    
+    def on_success(self, msg: str):
+        self.handle_success(self.id, msg)
+
+    def on_error(self, msg: str):
+        self.handle_error(self.id, msg)
 
     def is_passive(self):
         return self.on_recv is not None
@@ -49,10 +58,11 @@ class ConnectionClosedError(Exception):
 
 class Client(Connection):
     def __init__(self, id, host, port, on_recv: types.FunctionType = None,
-                 on_info: types.FunctionType = lambda id,msg: msg,
-                 on_success: types.FunctionType = lambda id, msg: msg,
-                 on_error: types.FunctionType = lambda id, msg: msg):
-        super().__init__(id, host, port, on_recv, on_info, on_success, on_error)
+                 handle_event: types.FunctionType = lambda id, msg: msg,
+                 handle_success: types.FunctionType = lambda id, msg: msg,
+                 handle_error: types.FunctionType = lambda id, msg: msg):
+        super().__init__(id, host, port, on_recv, handle_event, handle_success,
+                         handle_error)
         self.sck: socket.socket = None
         self.sck_lock = threading.Lock()
     
@@ -82,19 +92,19 @@ class Client(Connection):
         except ConnectionResetError:
             # Abrupt close by server
             self.sck_lock.acquire() # Manual close while abrupt close
-            self.sck_sck = None
+            self.sck = None
             self.sck_lock.release()
             self.on_error('Abrupt close by server')
         except (ConnectionAbortedError, AttributeError, OSError) as e:
             if isinstance(e, ConnectionAbortedError):
                 # Server closed safely
                 self.sck_lock.acquire() # Manual close while safe close
-                self.sck_sck = None
+                self.sck = None
                 self.sck_lock.release()
-                self.on_info('Connection closed by server safely')
+                self.on_event('Connection closed by server safely')
             else:
                 # Client manually closed
-                self.on_info('Connection manually closed')
+                self.on_event('Connection manually closed')
 
     def recv_loop(self):
         while True:
@@ -118,11 +128,11 @@ class Client(Connection):
             self.sck_lock.acquire() # Wait if server was manually closed
             if self.sck is None:
                 # Manual close
-                self.on_info('Client manually closed')
+                self.on_event('Client manually closed')
             else:
                 # Unexpected close
                 self.sck = None
-                self.on_error('Client closed unexpectedly')
+                self.on_error('Connection refused')
             self.sck_lock.release()
 
     def close(self):
@@ -159,10 +169,10 @@ class Client(Connection):
 
 class Server(Connection):
     def __init__(self, id, host, port, on_recv: types.FunctionType = None,
-                 on_info: types.FunctionType = lambda id, msg: msg,
-                 on_success: types.FunctionType = lambda id, msg: msg,
-                 on_error: types.FunctionType = lambda id, msg: msg):
-        super().__init__(id, host, port, on_recv, on_info, on_success, on_error)
+                 handle_event: types.FunctionType = lambda id, msg: msg,
+                 handle_success: types.FunctionType = lambda id, msg: msg,
+                 handle_error: types.FunctionType = lambda id, msg: msg):
+        super().__init__(id, host, port, on_recv, handle_event, handle_success, handle_error)
         self.sv_sck: socket.socket = None # Socket for server
         self.cl_sck: socket.socket = None # Socket for client connection
         self.cl_lock = threading.Lock()
@@ -210,10 +220,10 @@ class Server(Connection):
                 self.cl_lock.acquire() # manual close while safe client close
                 self.cl_sck = None
                 self.cl_lock.release()
-                self.on_info('Connection closed by client safely')
+                self.on_event('Connection closed by client safely')
             else:
                 # Server manually closed
-                self.on_info('Connection manually closed')
+                self.on_event('Connection manually closed')
 
     def recv_loop(self):
         while True:
@@ -234,7 +244,7 @@ class Server(Connection):
                 self.sv_lock.acquire() # Wait if server was manually closed
                 if self.sv_sck is None:
                     # Manual close
-                    self.on_info('Server manually closed')
+                    self.on_event('Server manually closed')
                 else:
                     # Unexpected close
                     self.sv_sck = None
@@ -260,12 +270,13 @@ class Server(Connection):
             self.sv_lock.acquire() # Wait if server was manually closed
             if self.sv_sck is None:
                 # Manual close
-                self.on_info('Server manually closed')
+                self.on_event('Server manually closed')
             else:
                 # Unexpected close
                 self.sv_sck = None
-                self.on_error('Server closed unexpectedly')
+                self.on_error('Connection refused')
             self.sv_lock.release()
+        # TODO handle exceptions
     
     def close(self):
         self.cl_lock.acquire()
@@ -305,27 +316,61 @@ class Server(Connection):
             # Socket closed
             raise ConnectionClosedError()
 
+@th_sf_singleton
 class ConnsHandler:
-    # TODO conns status, send, recv
-    def __init__(self, conns: list[Server | Client],
-                 on_success: types.FunctionType,
-                 on_error: types.FunctionType) -> None:
-        self.conns: list[Server | Client] = conns
-        self.on_success = on_success
-        self.on_error = on_error
+    def __init__(self):
+        self.conns: list[Connection] = []
+        self.handle_event = lambda id, msg: msg
+        self.handle_success = lambda id, msg: msg
+        self.handle_error = lambda id, msg: msg
+    
+    def set_event_handler(self, handle_event: types.FunctionType):
+        self.handle_event = handle_event
+        for conn in self.conns:
+            conn.handle_event = handle_event
+    def set_success_handler(self, handle_success: types.FunctionType):
+        self.handle_success = handle_success
+        for conn in self.conns:
+            conn.handle_success = handle_success
+    def set_error_handler(self, handle_error: types.FunctionType):
+        self.handle_error = handle_error
+        for conn in self.conns:
+            conn.handle_error = handle_error
 
-    def _restart_conn(self, conn: Client | Server):
-        try:
-            conn.restart_conn()
-            self.on_success(conn.id)
-        except ConnectionError:
-            self.on_error(conn.id)
+    def add(self, conns: Connection | list[Connection]):
+        conns_list = [conns] if isinstance(conns, Connection) else conns
+        for conn in conns_list:
+            self.conns.append(conn)
+            conn.handle_event = self.handle_event
+            conn.handle_success = self.handle_success
+            conn.handle_error = self.handle_error
 
-    def restart_conns(self, ids: list[str] = []):
+    def restart(self, ids: list[str] = []):
         if not ids: # restart all connections
             for conn in self.conns:
-                self._restart_conn(conn)
+                conn.restart()
         else: # restart specified connections
             for conn in self.conns:
                 if (conn.id in ids):
-                    self._restart_conn(conn)
+                    conn.restart()
+    
+    def close(self, ids: list[str] = []):
+        if not ids: # restart all connections
+            for conn in self.conns:
+                conn.close()
+        else: # restart specified connections
+            for conn in self.conns:
+                if (conn.id in ids):
+                    conn.close()
+    
+    def get_conn(self, id: str) -> Connection | None:
+        for conn in self.conns:
+            if conn.id == id:
+                return conn
+        return None
+
+    def get_status(self, format: types.FunctionType = lambda id, st: f'{id}: {st}') -> str:
+        status_list = []
+        for conn in self.conns:
+            status_list.append(format(conn.id, conn.get_status()))
+        return '\n'.join(status_list)

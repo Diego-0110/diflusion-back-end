@@ -1,18 +1,9 @@
 from app.model import Model
+from utils.conn import ConnectionClosedError
 from utils.cmd import Command
 from argparse import ArgumentParser
 import os
-
-# class Command:
-#     def __init__(self, cmd_id: str, model: Model):
-#         self.id = cmd_id
-#         self.model = model
-
-#     def set_parser(self, parser: ArgumentParser):
-#         parser.set_defaults(func=self.run)
-
-#     def run(self, args):
-#         pass
+import sys
 
 class ConnectionCmd(Command):
     def __init__(self, model: Model):
@@ -20,10 +11,12 @@ class ConnectionCmd(Command):
         self.model = model
 
     def status_func(self, args):
-        self.model.connection_status()
+        print(self.model.connsHandler.get_status())
 
     def restart_func(self, args):
-        self.model.restart_connections(args.ids)
+        output_id = self.model.view.add_output(sys.stdout)
+        self.model.connsHandler.restart(args.ids)
+        self.model.view.rm_output(output_id)
 
     def set_parser(self, parser: ArgumentParser):
         subparsers = parser.add_subparsers(required=True)
@@ -40,12 +33,19 @@ class SendCmd(Command):
 
     def set_parser(self, parser: ArgumentParser):
         super().set_parser(parser)
-        parser.add_argument('id', choices=[conn.id for conn in self.model.conns])
+        parser.add_argument('id')
         parser.add_argument('-cmd', default=[], nargs='+', required=True)
 
     def run(self, args):
         cmd_str = ' '.join(args.cmd)
-        self.model.send_to(args.id, cmd_str)
+        conn = self.model.connsHandler.get_conn(args.id)
+        if conn is None:
+            print(f'ERROR: \'{args.id}\' doesn\'t exist')
+        else:
+            try:
+                conn.try_send_msg(cmd_str)
+            except ConnectionClosedError:
+                print(f'ERROR: {conn.id} is closed')
 
 class ShowLogsCmd(Command):
     def __init__(self, model: Model):
@@ -73,6 +73,5 @@ class QuitCmd(Command):
         self.model = model
 
     def run(self, args):
-        for conn in self.model.conns:
-            conn.close_conn()
+        self.model.connsHandler.close()
         os._exit(1)
