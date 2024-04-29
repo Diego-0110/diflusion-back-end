@@ -1,20 +1,28 @@
 from utils.data import JSON, Excel
-from utils.types import cast
-from utils.scripts import get_hash_from_dict, get_sub_dict
+from utils.scripts import cast, hash_from_dict, noneless_dict, clean_geopoly, \
+    value_or_none as vn, schema_geopoint, schema_geopoly
 import os
 import requests
 import consts.config as config
 import time
+import datetime
+from schema import Schema, SchemaError, Optional, And, Or
 
-class Formatter:
-    def __init__(self, data_id: str) -> None:
+class Formatter: # TODO formato GeoJSON
+    # Read and format data without checking uniqueness
+    def __init__(self, data_id: str, ids: list[str], schema: Schema):
         self.data_id = data_id
+        self.ids = ids
+        self.schema: Schema = schema
 
     def read_data(self) -> list[dict]:
         pass
 
     def format_data(self, data: dict) -> dict:
         pass
+
+    def generate_id(self, formatted_data: dict) -> dict:
+        return hash_from_dict(formatted_data, self.ids)
 
     def filter_data(self, data_list: list[dict]) -> list[dict]:
         return data_list
@@ -24,7 +32,7 @@ class Formatter:
         filename = os.path.join(config.OUTPUT_PATH, f'{self.data_id}.json')
         JSON(filename).write_all(data_list)
 
-    def run(self):
+    def run(self) -> tuple[int, int]:
         # TODO error handling
         # TODO progress
         t = time.localtime()
@@ -34,57 +42,104 @@ class Formatter:
         t = time.localtime()
         current_time = time.strftime("%H:%M:%S", t)
         print(f' {current_time} formatting...')
-        formatted_list = [self.format_data(data) for data in data_list]
+        formatted_list = []
+        invalid_data_count = 0
+        for data in data_list:
+            f_data = self.format_data(data)
+            f_data = noneless_dict(f_data)
+            f_data['id'] = self.generate_id(f_data)
+            try:
+                self.schema.validate(f_data)
+            except SchemaError as se:
+                print(se) # TODO logs
+                invalid_data_count += 1
+            formatted_list.append(f_data)
         t = time.localtime()
         current_time = time.strftime("%H:%M:%S", t)
         print(f' {current_time} saving...')
-        self.save(self.filter_data(formatted_list))
+        self.save(formatted_list)
         t = time.localtime()
         current_time = time.strftime("%H:%M:%S", t)
         print(f' {current_time} finished')
+        return (formatted_list, invalid_data_count)
 
 
 class OutbreaksFmt(Formatter):
     def __init__(self) -> None:
-        super().__init__('outbreaks')
+        super().__init__('outbreaks', [
+            'diseaseId', 'loc', 'reportDate'
+        ], Schema({
+            'id': str,
+            'diseaseId': int,
+            Optional('serotype'): str,
+            'loc': schema_geopoint(),
+            Optional('city'): And(str, lambda x: len(x) > 0),
+            Optional('adminDivNUT1'): And(str, lambda x: len(x) > 0),
+            Optional('country'): And(str, lambda x: len(x) > 0),
+            'region': And(str, lambda x: len(x) > 0),
+            'reportDate': int,
+            Optional('species'): And(str, lambda x: len(x) > 0),
+            'animalType': lambda x: x in [0, 1, 2],
+            'cases': And(int, lambda x: x >= 0),
+            'deaths': And(int, lambda x: x >= 0)
+        }))
+        self._ref_date = datetime.datetime(1900, 1, 1)
     
-    def filter(self, data: dict):
-        return data.get('disease_id') in [584, 585, 561, 573, 578] and \
-            data.get('region') == 'Europe'
+    def pre_filter(self, data: dict):
+        return (data.get('disease_id') in [584, 585, 561, 573, 578] or
+                data.get('disease_eng') == 'High pathogenicity avian influenza viruses (poultry) (Inf. with)') and \
+                data.get('region') == 'Europe' # TODO consts
 
     def read_data(self) -> list[dict]:
-        # TODO read raw_outbreaks.xlsx and filter by disease_id and region
         filename = os.path.join(config.INPUT_PATH, 'raw_outbreaks.xlsx')
-        return Excel(filename).read_all(self.filter)
+        return Excel(filename).read_all(self.pre_filter)
     
+    def _get_animal_type(self, is_wild: bool, wild_type: str):
+        if not is_wild:
+            return 0 # Domestic
+        if wild_type == 'captive':
+            return 2 # Captive
+        return 1 # Wild
+    
+    def _get_report_date(self, days: int) -> int:
+        return int((self._ref_date + datetime.timedelta(days=days)).timestamp())
+
     def format_data(self, data: dict) -> dict:
-        # TODO remove fields with no value
-        # TODO nan values
-        # TODO animalType
         res = {
-            'eventId': cast(data['epi_event_id'], int), # TODO remove?
-            'diseaseId': cast(data['disease_id'], int), # TODO remove?
-            'serotype': cast(data['sero_sub_genotype_eng'], str),
-            'coords': [cast(data['Longitude'], float),
-                       cast(data['Latitude'], float)],
-            'city': cast(data['level3_name'], str, ''), # TODO Location_name?
-            'country': cast(data['country'], str, ''),
-            'region': cast(data['region'], str, ''), # TODO ISO code?
-            'reportDate': cast(data['Reporting_date'], int), # TODO format date
-            'species': cast(data['Species'], str, ''), # TODO generic values (Birds, ...)
-            'animalType': cast(data['is_wild'], bool), # TODO is_wild and wild_type
+            'diseaseId': cast(data['disease_id'], int),
+            'serotype': vn(data['sero_sub_genotype_eng'], str),
+            'loc': {
+                'type': 'Point',
+                'coordinates': [cast(data['Longitude'], float),
+                       cast(data['Latitude'], float)]
+            },
+            'city': vn(data['level3_name'], str),
+            'adminDivNUT1': vn(data['level3_name'], str),
+            'country': vn(data['iso_code'], str), # TODO converto to alpha-1
+            'region': vn(data['region'], str),
+            'reportDate': self._get_report_date(cast(data['Reporting_date'], int)),
+            'species': vn(data['Species'], str), # TODO generic values (Birds, ...)
+            'animalType': self._get_animal_type(cast(data['is_wild'], bool),
+                                                data['wild_type']),
             'cases': cast(data['cases'], int, 0),
             'deaths': cast(data['dead'], int, 0)
         }
-        res['id'] = get_hash_from_dict(get_sub_dict(res,
-                                                    ['serotype','coords',
-                                                     'reportDate', 'species']))
         return res
 
 
 class WeatherFmt(Formatter):
     def __init__(self) -> None:
-        super().__init__('weather')
+        super().__init__('weather', [
+            'fromDate', 'toDate', 'loc'
+        ], Schema({
+            'id': str,
+            'fromDate': int,
+            'toDate': int,
+            'loc': schema_geopoint(),
+            'predictions': [{
+                'minTemperature': Or(int, float)
+            }]
+        }))
 
     def read_data(self) -> list[dict]:
         filename = os.path.join(config.INPUT_PATH, 'weather_stations.xlsx')
@@ -102,70 +157,94 @@ class WeatherFmt(Formatter):
             api_params['ll'] = f'{lat},{lon}'
             response = requests.get(api_url, api_params)
             if response.status_code != 200:
-                print(f'{station['id']}: code error')
+                # print(f'{station['id']}: code error')
                 continue
             api_data = response.json()
             if 'error' in api_data:
-                print(f'{station['id']}: {api_data['error']}')
+                # print(f'{station['id']}: {api_data['error']}')
                 continue
-            print(f'{station['id']}: success')
+            # print(f'{station['id']}: success')
             api_data['coords'] = [lon, lat]
             res.append(api_data)
         return res
 
     def format_data(self, data: dict) -> dict:
-        res = {
-            # TODO time interval
-            'coords': data['coords'],
-            'minTemperatures': [data[f'day{i}']['temperature_min'] for i in range(1, 8)]
+        from_date = datetime.datetime.strptime(data['day1']['date'], '%Y-%m-%d')
+        to_date = from_date + datetime.timedelta(days=6) # TODO Const
+        predictions = []
+        for i in range(1, 8):
+            predictions.append({
+                'minTemperature': data[f'day{i}']['temperature_min']
+            })
+        return {
+            'fromDate': int(from_date.timestamp()),
+            'toDate': int(to_date.timestamp()),
+            'loc': {
+                'type': 'Point',
+                'coordinates': data['coords']
+            },
+            'predictions': predictions
         }
-        res['id'] = get_hash_from_dict(get_sub_dict(res, ['coords']))
-        return res
 
 class MigrationsFmt(Formatter):
     def __init__(self) -> None:
-        super().__init__('migrations')
+        super().__init__('migrations', [], Schema({
+            'id': str,
+            'from': {
+                Optional('country'): And(str, lambda x: len(x) == 2),
+                'loc': schema_geopoint()
+            },
+            'to': {
+                Optional('country'): And(str, lambda x: len(x) == 2),
+                'loc': schema_geopoint(),
+                'region': And(str, lambda x: len(x) > 0)
+            },
+            'species': And(str, lambda x: len(x) > 0)
+        }))
     
     def read_data(self) -> list[dict]:
         filename = os.path.join(config.INPUT_PATH, 'raw_migrations.xlsx')
         return Excel(filename).read_all()
 
     def format_data(self, data: dict) -> dict:
-        res = {
+        return {
             'from': {
-                'country': cast(data['PAIS'], str, ''),
-                'coords': [cast(data['long_a'], float),
+                'country': vn(data['PAIS'], str),
+                'loc': {
+                    'type': 'Point',
+                    'coordinates': [cast(data['long_a'], float),
                            cast(data['Lat_A'], float)],
+                },
             },
             'to': {
-                'country': cast(data['PAIS2'], str, ''),
-                'coords': [cast(data['LON_R'], float),
+                'country': vn(data['PAIS2'], str),
+                'loc': {
+                    'type': 'Point',
+                    'coordinates': [cast(data['LON_R'], float),
                            cast(data['LAT_R'], float)],
-                'region': cast(data['comarca_sg'], str, ''),
+                },
+                'region': cast(data['comarca_sg'], str)
             },
-            'species': cast(data['ESPECIE2'], str, '')
+            'species': cast(data['ESPECIE2'], str)
         }
-        id_dict = {
-            'toCoords': res['to']['coords'],
-            'fromCoords': res['from']['coords'],
-            'species': res['species']
-        }
-        res['id'] = get_hash_from_dict(id_dict)
-        return res
     
-    def filter_data(self, data_list: list[dict]) -> list[dict]:
-        # In the same file can be repeated data
-        uniques = []
-        for data in data_list:
-            if data not in uniques:
-                uniques.append(data)
-        
-        return uniques
-
+    def generate_id(self, formatted_data: dict) -> dict:
+        id_dict = {
+            'toCoords': formatted_data['to']['loc']['coordinates'],
+            'fromCoords': formatted_data['from']['loc']['coordinates'],
+            'species': formatted_data['species']
+        }
+        return hash_from_dict(id_dict)
 
 class RegionsFmt(Formatter):
     def __init__(self) -> None:
-        super().__init__('regions')
+        super().__init__('regions', [], Schema({
+            'id': str,
+            'geo': schema_geopoly(),
+            Optional('name'): And(str, lambda x: len(x) > 0),
+            Optional('adminDivNUT3'): And(str, lambda x: len(x) > 0),
+            Optional('adminDivNUT2'): And(str, lambda x: len(x) > 0)
+        }))
     
     def read_data(self) -> list[dict]:
         filename = os.path.join(config.INPUT_PATH, 'raw_regions.geojson')
@@ -177,17 +256,27 @@ class RegionsFmt(Formatter):
         geo = data['geometry']
         return {
             'id': props['comarca_sg'],
-            'coords': geo['coordinates'],
-            'geoType': geo['type'],
-            'name': props['comarca'],
-            'adminDivNUT3': props['provincia'],
-            'adminDivNUT2': props['comAutonoma']
+            'geo': {
+                'type': geo['type'],
+                'coordinates': clean_geopoly(geo['coordinates'], geo['type'])
+            },
+            'name': props.get('comarca'),
+            'adminDivNUT3': props.get('provincia'),
+            'adminDivNUT2': props.get('comAutonoma')
         }
+
+    def generate_id(self, formatted_data: dict) -> dict:
+        return formatted_data['id']
 
 
 class BirdsFmt(Formatter):
     def __init__(self) -> None:
-        super().__init__('birds')
+        super().__init__('birds', ['scientificName'], Schema({
+            'id': str,
+            'scientificName': And(str, lambda x: len(x) > 0),
+            'ringCode': int,
+            'migrationProb': And([float, int], lambda x: len(x) == 48)
+        }))
     
     def filter(self, data: dict):
         return len(cast(data.get('Nombre científico'), str)) > 0
@@ -195,19 +284,18 @@ class BirdsFmt(Formatter):
     def read_data(self) -> list[dict]:
         # TODO add equivalent birds
         filename = os.path.join(config.INPUT_PATH, 'raw_migrations.xlsx')
-        return Excel(filename, 1, 3).read_all(self.filter)
+        return Excel(filename, 1, 3).read_all(condition=self.filter)
     
-    def get_probabilities(self, data: dict) -> list:
+    def _get_probabilities(self, data: dict) -> list:
         probs = []
-        for i in range(1, 48):
+        for i in range(1, 49):
             probs.append(cast(data[i], float, 0))
         return probs
 
     def format_data(self, data: dict) -> dict:
-        res = {
-            # TODO format birds family
-            'scientificName': cast(data.get('Nombre científico'), str),
-            'migrationProb': self.get_probabilities(data)
+        return {
+            # TODO additional birds
+            'scientificName': cast(data['Nombre científico'], str),
+            'ringCode': cast(data['codigo anilla'], int),
+            'migrationProb': self._get_probabilities(data)
         }
-        res['id'] = get_hash_from_dict(get_sub_dict(res, ['scientificName']))
-        return res

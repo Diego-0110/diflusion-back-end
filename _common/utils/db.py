@@ -1,4 +1,3 @@
-import os
 from .decorators import th_sf_singleton
 from neo4j import GraphDatabase, Driver
 from pymongo import MongoClient

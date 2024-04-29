@@ -7,6 +7,7 @@ load_dotenv()
 HOST = os.getenv('FORMATTER_HOST')
 CTRL_PORT = int(os.getenv('FORMATTER_CTRL_PORT'))
 LOG_PORT = int(os.getenv('FORMATTER_LOG_PORT'))
+LOG_PATH = os.getenv('FORMATTER_LOG_PATH')
 
 # Input/Output file paths
 INPUT_PATH = os.getenv('INPUT_PATH')

@@ -176,6 +176,7 @@ class Server(Connection):
         self.sv_sck: socket.socket = None # Socket for server
         self.cl_sck: socket.socket = None # Socket for client connection
         self.cl_lock = threading.Lock()
+        self.cl_evt = threading.Event() # When connection with client is closed
         self.sv_lock = threading.Lock()
     
     def is_established(self):
@@ -211,6 +212,7 @@ class Server(Connection):
             # Abrupt close by client
             self.cl_lock.acquire() # Manual close while abrupt close
             self.cl_sck = None
+            self.cl_evt.set()
             self.cl_lock.release()
             self.on_error('Abrupt close by client')
         except (ConnectionAbortedError, AttributeError, OSError) as e:
@@ -219,6 +221,7 @@ class Server(Connection):
                 # Client closed safely
                 self.cl_lock.acquire() # manual close while safe client close
                 self.cl_sck = None
+                self.cl_evt.set()
                 self.cl_lock.release()
                 self.on_event('Connection closed by client safely')
             else:
@@ -238,7 +241,7 @@ class Server(Connection):
         while True:
             try:
                 # Race condition: manual close -> AttributeError
-                self.cl_sck, addr = self.sv_sck.accept() # TODO IP
+                self.cl_sck, addr = self.sv_sck.accept()
             except (AttributeError, OSError):
                 # Server closed
                 self.sv_lock.acquire() # Wait if server was manually closed
@@ -256,7 +259,8 @@ class Server(Connection):
             if self.is_passive():
                 self.recv_loop()
             else:
-                while self.is_established(): pass
+                self.cl_evt.wait()
+                self.cl_evt.clear()
 
     def start(self):
         self.sv_sck = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -276,7 +280,6 @@ class Server(Connection):
                 self.sv_sck = None
                 self.on_error('Connection refused')
             self.sv_lock.release()
-        # TODO handle exceptions
     
     def close(self):
         self.cl_lock.acquire()
@@ -286,6 +289,7 @@ class Server(Connection):
             # shutdown -> OSError: only when close was called before
             self.cl_sck.close()
             self.cl_sck = None
+            self.cl_evt.set()
         self.cl_lock.release()
         self.sv_lock.acquire() # Wait if server was unexpectedly closed
         if self.is_listening():
@@ -369,7 +373,8 @@ class ConnsHandler:
                 return conn
         return None
 
-    def get_status(self, format: types.FunctionType = lambda id, st: f'{id}: {st}') -> str:
+    def get_status(self,
+                   format: types.FunctionType = lambda id, st: f'{id}: {st}') -> str:
         status_list = []
         for conn in self.conns:
             status_list.append(format(conn.id, conn.get_status()))

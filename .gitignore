@@ -3,6 +3,7 @@
 __pycache__
 # Ignore common files
 */utils
+*/recipes
 !_common/*
 # Ignore .env file
 .env

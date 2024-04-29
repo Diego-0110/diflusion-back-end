@@ -6,7 +6,6 @@ import json
 class Data:
     def __init__(self, filename) -> None:
         self.filename = filename
-        # TODO iterable
 
     def read_all(self, condition: FunctionType = lambda x: x):
         pass

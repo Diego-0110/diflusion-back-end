@@ -10,6 +10,12 @@ class Command:
     def run(self, args):
         pass
 
+class InvalidCmdError(ValueError):
+    pass
+
+class HelpCmdError(ValueError):
+    pass
+
 class CmdExecutor:
     def __init__(self, cmds: list[Command]) -> None:
         self.cmds = cmds
@@ -23,10 +29,12 @@ class CmdExecutor:
     def execute_cmd(self, str_cmd: str):
         # Parses str_cmd using the parser.
         try:
+            splitted_cmd = str_cmd.split(' ')
             args = self.parser.parse_args(str_cmd.split(' '))
-            args.func(args)
+            return args.func(args)
         except SystemExit: # Avoid automatic exit from parser
-            # TODO show error
-            pass
+            if '-h' in splitted_cmd or '--help' in splitted_cmd:
+                raise HelpCmdError()
+            raise InvalidCmdError
 
     

@@ -7,6 +7,7 @@ load_dotenv()
 HOST = os.getenv('DAEMON_HOST')
 CTRL_PORT = int(os.getenv('DAEMON_CTRL_PORT'))
 LOG_PORT = int(os.getenv('DAEMON_LOG_PORT'))
+LOG_PATH = os.getenv('DAEMON_LOG_PATH')
 
 # Input/Output file paths
 INPUT_PATH = os.getenv('INPUT_PATH')
