@@ -1,28 +1,35 @@
 from utils.data import JSON
 import consts.config as config
-from utils.db import Neo4jDB, MongoDB
+from utils.db import MongoDB
 from pymongo import collection
-from neo4j import Session
 from utils.scripts import rename_list_dict
 import os
-import copy
+
+class UpdaterError(Exception):
+    pass
 class Updater:
-    def __init__(self, data_id: str) -> None:
-        self.data_id = data_id
+    def __init__(self, id: str) -> None:
+        self.id = id
 
     def read_data(self) -> list[dict]:
-        filename = os.path.join(config.OUTPUT_PATH, f'{self.data_id}.json')
+        filename = os.path.join(config.OUTPUT_PATH, f'{self.id}.json')
         return JSON(filename).read_all()
 
     def get_model_session(self) -> collection.Collection:
-        mongo_client = MongoDB().get_client(config.MODEL_DB_URL)
-        mongo_db = mongo_client[config.MODEL_DB_NAME]
-        return mongo_db[self.data_id]
+        try:
+            mongo_client = MongoDB().get_client(config.MODEL_DB_URL)
+            mongo_db = mongo_client[config.MODEL_DB_NAME]
+            return mongo_db[self.id]
+        except Exception:
+            raise UpdaterError(f'Error while starting connection to {config.MODEL_DB_NAME}')
     
     def get_web_session(self) -> collection.Collection:
-        mongo_client = MongoDB().get_client(config.WEB_DB_URL)
-        mongo_db = mongo_client[config.WEB_DB_NAME]
-        return mongo_db[self.data_id]
+        try:
+            mongo_client = MongoDB().get_client(config.WEB_DB_URL)
+            mongo_db = mongo_client[config.WEB_DB_NAME]
+            return mongo_db[self.id]
+        except Exception:
+            raise UpdaterError(f'Error while starting connection to {config.WEB_DB_NAME}')
 
     def update_model_db(self, data_list: list[dict], updt_dupl: bool) -> int:
         coll = self.get_model_session()
@@ -62,15 +69,28 @@ class Updater:
         return unique_data
 
     def run(self, updt_dupl = False):
-        data_list = self.read_data()
+        try:
+            data_list = self.read_data()
+        except Exception:
+            raise UpdaterError(f'Error while reading input data')
         # Remove duplicate data and count
         dup_num = len(data_list)
         data_list = self.filter_unique(data_list)
         dup_num -= len(data_list)
         # Formatting for Mongo
         rename_list_dict(data_list, {'id': '_id'})
-        dup_m_num = self.update_model_db(data_list, updt_dupl)
-        dup_w_num = self.update_web_db(data_list, updt_dupl)
+        try:
+            dup_m_num = self.update_model_db(data_list, updt_dupl)
+        except UpdaterError as e:
+            raise e
+        except Exception:
+            raise UpdaterError(f'Error while updating model database')
+        try:
+            dup_w_num = self.update_web_db(data_list, updt_dupl)
+        except UpdaterError as e:
+            raise e
+        except Exception:
+            raise UpdaterError(f'Error while updating web database')
         return (dup_num, dup_m_num, dup_w_num)
 
 class OutbreaksUpdt(Updater):

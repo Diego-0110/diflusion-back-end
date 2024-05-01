@@ -6,7 +6,7 @@ import consts.config as config
 
 class Controller(ShareController):
     def __init__(self, model: Model, view: View):
-        super().__init__(model, view, [
+        super().__init__('model', model, view, [
             RunPredictorCmd(model)
             # Add available commands
         ], config.HOST, config.CTRL_PORT)

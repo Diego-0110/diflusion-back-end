@@ -8,7 +8,10 @@ import time
 import datetime
 from schema import Schema, SchemaError, Optional, And, Or
 
-class Formatter: # TODO formato GeoJSON
+class FormatterError(Exception):
+    pass
+
+class Formatter:
     # Read and format data without checking uniqueness
     def __init__(self, data_id: str, ids: list[str], schema: Schema):
         self.data_id = data_id
@@ -34,34 +37,29 @@ class Formatter: # TODO formato GeoJSON
 
     def run(self) -> tuple[int, int]:
         # TODO error handling
-        # TODO progress
-        t = time.localtime()
-        current_time = time.strftime("%H:%M:%S", t)
-        print(f' {current_time} reading...')
-        data_list = self.read_data()
-        t = time.localtime()
-        current_time = time.strftime("%H:%M:%S", t)
-        print(f' {current_time} formatting...')
-        formatted_list = []
-        invalid_data_count = 0
-        for data in data_list:
-            f_data = self.format_data(data)
-            f_data = noneless_dict(f_data)
-            f_data['id'] = self.generate_id(f_data)
-            try:
-                self.schema.validate(f_data)
-            except SchemaError as se:
-                print(se) # TODO logs
-                invalid_data_count += 1
-            formatted_list.append(f_data)
-        t = time.localtime()
-        current_time = time.strftime("%H:%M:%S", t)
-        print(f' {current_time} saving...')
-        self.save(formatted_list)
-        t = time.localtime()
-        current_time = time.strftime("%H:%M:%S", t)
-        print(f' {current_time} finished')
-        return (formatted_list, invalid_data_count)
+        try:
+            data_list = self.read_data()
+        except Exception:
+            raise FormatterError('Error while reading data')
+        try:
+            formatted_list = []
+            invalid_data_count = 0
+            for data in data_list:
+                f_data = self.format_data(data)
+                f_data = noneless_dict(f_data)
+                f_data['id'] = self.generate_id(f_data)
+                try:
+                    self.schema.validate(f_data)
+                except SchemaError as se:
+                    invalid_data_count += 1
+                formatted_list.append(f_data)
+        except Exception:
+            raise FormatterError('Error while formatting data')
+        try:
+            self.save(formatted_list)
+        except Exception:
+            raise FormatterError('Error while saving formatted data')
+        return (len(formatted_list), invalid_data_count)
 
 
 class OutbreaksFmt(Formatter):

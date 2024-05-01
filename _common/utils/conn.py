@@ -373,9 +373,14 @@ class ConnsHandler:
                 return conn
         return None
 
-    def get_status(self,
+    def get_status(self, ids: list[str] = [],
                    format: types.FunctionType = lambda id, st: f'{id}: {st}') -> str:
         status_list = []
-        for conn in self.conns:
-            status_list.append(format(conn.id, conn.get_status()))
+        if not ids:
+            for conn in self.conns:
+                status_list.append(format(conn.id, conn.get_status()))
+        else:
+            for conn in self.conns:
+                if conn.id in ids:
+                    status_list.append(format(conn.id, conn.get_status()))
         return '\n'.join(status_list)

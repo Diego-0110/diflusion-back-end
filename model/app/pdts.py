@@ -8,6 +8,9 @@ from datetime import datetime, timedelta
 from calendar import monthrange
 from utils.scripts import centroid_geopoly, idw_shepard
 
+class PredictorError(Exception):
+    pass
+
 class Predictor():
     # TODO check there are enough data to run the predictor (custom error)
     # TOODO parameters
@@ -45,12 +48,23 @@ class Predictor():
         h_lvl_coll = mongo_db_h['riskLevels']
         h_lvl_coll.insert_many(levels_list)
 
-    def run(self, ini_date: datetime, days: int):
-        fin_date = ini_date + timedelta(days=days)
+    def run(self, ini_date: datetime, days: int, compare_mode = False):
         mongo_db = self.get_model_db_session()
-        data_list = self.get_data(mongo_db, ini_date, days)
-        (levels_list, routes_list) = self.get_prediction(data_list, ini_date, days)
-        self.save(levels_list, routes_list) # TODO not save mode
+        try:
+            data_list = self.get_data(mongo_db, ini_date, days)
+        except Exception:
+            raise PredictorError(f'Error while getting data from model database')
+        try:
+            (levels_list, routes_list) = self.get_prediction(data_list, ini_date, days)
+        except Exception:
+            raise PredictorError(f'Error while getting prediction')
+        try:
+            if not compare_mode:
+                self.save(levels_list, routes_list) # TODO not save mode
+            else:
+                return ''
+        except Exception:
+            raise PermissionError(f'Error while saving results')
 
 DEFAULT_MIG_PROB = [0.5 for i in range(0, 48)]
 class PredictorA(Predictor):
@@ -59,6 +73,7 @@ class PredictorA(Predictor):
         self.config = { # TODO move to config
             'outbreakDistance': 50000,
             'outbreakDays': 180,
+            'travelDays': 7,
             'tempThreshold': 0.5,
             'levelThresholds': [
                 (lambda x: x < 1, None),
@@ -82,6 +97,8 @@ class PredictorA(Predictor):
         # Get all regions with a list of all migrations with that region as
         #   destiny
         reg_coll = db['regions']
+        mig_coll = db['migrations']
+        mig_coll.create_index({'to.region': 1})
         return list(reg_coll.aggregate([
             {
                 '$lookup': {
@@ -95,12 +112,20 @@ class PredictorA(Predictor):
     
     def _get_mig_outs_birds(self, db: database.Database, ids: list[str],
                             ini_date: datetime, days: int) -> list[dict]:
-        max_date = ini_date - timedelta(days=7) # TODO const
+        max_date = ini_date - timedelta(days=self.config['travelDays'])
         min_date = max_date - timedelta(days=self.config['outbreakDays'])
-        max_date = max_date.timestamp()
-        min_date = min_date.timestamp()
+        max_date = math.floor(max_date.timestamp())
+        min_date = math.floor(min_date.timestamp())
         # OUTBREAKS -- MIGRATIONS + BIRDS
         mig_coll = db['migrations']
+        mig_coll.create_index({'from.loc': '2dsphere'})
+        mig_coll.create_index({'to.loc': '2dsphere'})
+        mig_coll.create_index({'to.region': 1})
+        birds_coll = db['birds']
+        birds_coll.create_index({'scientificName': 1})
+        outs_coll = db['outbreaks']
+        outs_coll.create_index({'loc': '2dsphere'})
+        outs_coll.create_index({'reportDate': 1})
         return list(mig_coll.aggregate([
                     { # Only migrations with destiny 'region'
                     '$match': {
@@ -150,9 +175,12 @@ class PredictorA(Predictor):
                 ]))
     def _get_mean_temp(self, db: database.Database, region: dict,
                        ini_date: datetime, days: int) -> int:
-        min_date = ini_date.timestamp()
-        max_date = (ini_date + timedelta(days=days)).timestamp()
+        min_date = math.floor(ini_date.timestamp())
+        max_date = math.floor((ini_date + timedelta(days=days)).timestamp())
         weather_coll = db['weather']
+        weather_coll.create_index({'loc': '2dsphere'})
+        weather_coll.create_index({'fromDate': 1})
+        weather_coll.create_index({'toDate': 1})
         centroid = centroid_geopoly(region['geo']['coordinates'],
                                     region['geo']['type'])
         weather = weather_coll.aggregate([{
@@ -224,15 +252,14 @@ class PredictorA(Predictor):
                        days: int) -> tuple[list[dict], list[dict]]:
         # { regionId: x, riskRoutes: x, temperature: x}
         fin_date = ini_date + timedelta(days=days)
-        default_prob = []
         risk_routes = []
         for region in data_list:
             for mig in region['riskRoutes']:
                 outbreaks = [o['_id'] for o in mig['outs']]
                 risk_routes.append({
                     'regionId': region['regionId'],
-                    'fromDate': ini_date.timestamp(),
-                    'toDate': fin_date.timestamp(),
+                    'fromDate': math.floor(ini_date.timestamp()),
+                    'toDate': math.floor(fin_date.timestamp()),
                     'migrationId': mig['_id'],
                     'outbreaks': outbreaks
                 })
@@ -241,8 +268,8 @@ class PredictorA(Predictor):
             if not region['riskRoutes']:
                 risk_levels.append({
                     'regionId': region['regionId'],
-                    'fromDate': ini_date.timestamp(),
-                    'toDate': fin_date.timestamp(),
+                    'fromDate': math.floor(ini_date.timestamp()),
+                    'toDate': math.floor(fin_date.timestamp()),
                     # 'level': 0,
                     'value': 0
                 })
@@ -253,7 +280,7 @@ class PredictorA(Predictor):
                 temperature_w += -7.82 * math.log(region['temperature'], math.e)
             else:
                 temperature_w = 66
-            outbreak_date = ini_date - timedelta(days=7) # const
+            outbreak_date = ini_date - timedelta(days=self.config['travelDays'])
             (_, month_days) = monthrange(outbreak_date.year, outbreak_date.month)
             month_week = math.ceil(outbreak_date.day / (month_days / 4))
             year_week = month_week + ((outbreak_date.month - 1) * 4)
@@ -270,8 +297,8 @@ class PredictorA(Predictor):
             risk_value = contribution * temperature_w
             risk_dict = {
                 'regionId': region['regionId'],
-                'fromDate': ini_date.timestamp(),
-                'toDate': fin_date.timestamp(),
+                'fromDate': math.floor(ini_date.timestamp()),
+                'toDate': math.floor(fin_date.timestamp()),
                 'value': risk_value
             }
             if risk_value > 150:
