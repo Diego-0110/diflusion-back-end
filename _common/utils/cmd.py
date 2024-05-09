@@ -28,24 +28,24 @@ class CmdExecutor:
         self.cmds = cmds
     
     def available_cmds(self):
-        res = 'Available Cmds:'
+        res = ''
         for cmd in self.cmds:
             if not cmd.parser.description:
-                res += f'\n  {cmd.id}'
+                res += f'  {cmd.id}\n'
             else:
-                res += f'\n  {cmd.id: <12}\t\t{cmd.parser.description}'
-        res += f'\n  {'-h, --help':<12}\t\tshow this help message\n'
+                res += f'  {cmd.id: <12}\t\t{cmd.parser.description}\n'
+        res += f'  {'-h, --help':<12}\t\tshow this help message\n'
         return res
 
     def execute_cmd(self, str_cmd: str) -> str | None:
         # Parses str_cmd using the parser.
         cmd_list = str_cmd.split()
         if not cmd_list:
-            raise InvalidCmdError(self.available_cmds())
+            return None
         cmd_name = cmd_list[0]
         cmd_args_list = cmd_list[1:]
         if '-h' == cmd_name or '--help' == cmd_name:
-            raise HelpCmdError(self.available_cmds())
+            raise HelpCmdError(f'Available commands:\n{self.available_cmds()}')
         for cmd in self.cmds:
             if cmd.id == cmd_name:
                 if '-h' in cmd_list or '--help' in cmd_list:
@@ -57,6 +57,6 @@ class CmdExecutor:
                 except RunCmdError as e:
                     raise e
                 except SystemExit:
-                    raise InvalidCmdError(cmd.parser.format_help())
-        raise InvalidCmdError(self.available_cmds())
+                    raise InvalidCmdError(f'Invalid use of \'{cmd.id}\':\n{cmd.parser.format_help()}')
+        raise InvalidCmdError(f'Select a valid command:\n{self.available_cmds()}')
     

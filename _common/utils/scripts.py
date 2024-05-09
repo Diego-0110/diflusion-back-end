@@ -1,5 +1,6 @@
 import hashlib
 import datetime
+import pycountry
 from schema import Schema, And, Or
 import math
 
@@ -164,3 +165,11 @@ def idw_shepard(ref_point: list[float],
         num += w * value
         den += w
     return num / den
+
+def country_code_A3_to_A2(code_a3: str):
+    if not isinstance(code_a3, str):
+        return None
+    country = pycountry.countries.get(alpha_3=code_a3)
+    if not country:
+        return None
+    return country.alpha_2

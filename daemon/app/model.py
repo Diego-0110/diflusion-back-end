@@ -14,13 +14,16 @@ class Model(ShareModel):
         ]
     
     @method_task_decorator
-    def update_data(self, ids: list[str]):
+    def update_data(self, ids: list[str], updt_dupl: bool):
         for updt in self.updts:
             if updt.id in ids:
                 self.view.on_event(f'Running updater \'{updt.id}\'')
                 try:
-                    (in_dups, m_dups, w_dups) = updt.run()
+                    (in_dups, m_dups, w_dups) = updt.run(updt_dupl)
                 except UpdaterError as e:
                     self.view.on_error(f'Updater \'{updt.id}\': {e}')
-                self.view.on_success(f'Updater \'{updt.id}\' has finished. Duplicates: {in_dups} from input, {m_dups} in model db, {w_dups} in web db')
+                if updt_dupl:
+                    self.view.on_success(f'Updater \'{updt.id}\' has finished. Duplicates from input: {in_dups}. Updates: {m_dups} in model db, {w_dups} in web db')
+                else:
+                    self.view.on_success(f'Updater \'{updt.id}\' has finished. Duplicates: {in_dups} from input, {m_dups} in model db, {w_dups} in web db')
     # TODO other operations

@@ -5,7 +5,7 @@ from utils.conn import ConnsHandler, Client
 from loguru import logger
 
 class View:
-    FORMAT = '<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>'
+    FORMAT = '<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{extra[tag]: <9}</cyan> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>'
     N_CTRL = 'CONTROL'
     N_FORMATTER = 'FORMATTER'
     N_DAEMON = 'DAEMON'
@@ -23,19 +23,21 @@ class View:
         conns.set_error_handler(lambda id, msg: self.on_error(f'{id}: {msg}', 1))
         conns.add([
             Client('formatter_log', config.FORMATTER_HOST,
-                    config.FORMATTER_LOG_PORT, self.handle_log),
+                    config.FORMATTER_LOG_PORT, self.get_handle_log(View.N_FORMATTER)),
             Client('daemon_log', config.DAEMON_HOST, config.DAEMON_LOG_PORT,
-                    self.handle_log),
+                    self.get_handle_log(View.N_DAEMON)),
             Client('model_log', config.MODEL_HOST, config.MODEL_LOG_PORT,
-                    self.handle_log)
+                    self.get_handle_log(View.N_MODEL))
             # Add connections
         ])
     
-    def handle_log(self, msg: str):
-        msg_splitted = msg.split(':', 1)
-        level = msg_splitted[0]
-        message = msg_splitted[1]
-        logger.log(level, message)
+    def get_handle_log(self, tag: str):
+        def handle_log(msg: str):
+            msg_splitted = msg.split(':', 1)
+            level = msg_splitted[0]
+            message = msg_splitted[1]
+            logger.log(level, message, tag=tag)
+        return handle_log
     
     def on_event(self, msg: str, depth: int = 0, tag: str = N_CTRL):
         logger.opt(depth=depth+1).info(msg, tag=tag)

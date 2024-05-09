@@ -1,0 +1,94 @@
+services:
+    control:
+        image: python:3.12.3-alpine3.18
+        stdin_open: true # docker run -i
+        tty: true        # docker run -t
+        command: sh -c "
+            cp /diflusion/code/control/main.py . &&
+            cp -r /diflusion/code/control/app . &&
+            cp -r /diflusion/code/control/consts . &&
+            cp -r /diflusion/code/_common/* . &&
+            cp /diflusion/code/requirements.txt . &&
+            pip install -r requirements.txt &&
+            python main.py"
+        working_dir: /control
+        env_file:
+            - path: ./production.env
+              required: true
+        volumes:
+            - .:/diflusion/code
+            - ${LOCAL_PATH}/logs/control:/control/logs
+
+    formatter:
+        image: python:3.12.3-alpine3.18
+        stdin_open: true # docker run -i
+        tty: true        # docker run -t
+        command: sh -c "
+            cp /diflusion/code/formatter/main.py . &&
+            cp -r /diflusion/code/formatter/app . &&
+            cp -r /diflusion/code/formatter/consts . &&
+            cp -r /diflusion/code/_common/* . &&
+            cp /diflusion/code/requirements.txt . &&
+            pip install -r requirements.txt &&
+            python main.py"
+        working_dir: /formatter
+        env_file:
+            - path: ./production.env
+              required: true
+        volumes:
+            - .:/diflusion/code
+            - ${LOCAL_PATH}/logs/formatter:/formatter/logs
+            - ${LOCAL_PATH}/data/input:/diflusion/data/input
+            - ${LOCAL_PATH}/data/formatted:/diflusion/data/formatted
+
+    daemon:
+        image: python:3.12.3-alpine3.18
+        stdin_open: true # docker run -i
+        tty: true        # docker run -t
+        command: sh -c "
+            cp /diflusion/code/daemon/main.py . &&
+            cp -r /diflusion/code/daemon/app . &&
+            cp -r /diflusion/code/daemon/consts . &&
+            cp -r /diflusion/code/_common/* . &&
+            cp /diflusion/code/requirements.txt . &&
+            pip install -r requirements.txt &&
+            python main.py"
+        working_dir: /daemon
+        env_file:
+            - path: ./production.env
+              required: true
+        volumes:
+            - .:/diflusion/code
+            - ${LOCAL_PATH}/logs/daemon:/daemon/logs
+            - ${LOCAL_PATH}/data/formatted:/diflusion/data/formatted
+
+    model:
+        image: python:3.12.3-alpine3.18
+        stdin_open: true # docker run -i
+        tty: true        # docker run -t
+        command: sh -c "
+            cp /diflusion/code/model/main.py . &&
+            cp -r /diflusion/code/model/app . &&
+            cp -r /diflusion/code/model/consts . &&
+            cp -r /diflusion/code/_common/* . &&
+            cp /diflusion/code/requirements.txt . &&
+            pip install -r requirements.txt &&
+            python main.py"
+        working_dir: /model
+        env_file:
+            - path: ./production.env
+              required: true
+        volumes:
+            - .:/diflusion/code
+            - ${LOCAL_PATH}/logs/model:/model/logs
+            - ${LOCAL_PATH}/predictions:/model/predictions
+
+    mongodb:
+        image: mongodb/mongodb-community-server:6.0-ubi8
+        restart: on-failure:2
+        environment:
+            - MONGODB_INITDB_ROOT_USERNAME=user
+            - MONGODB_INITDB_ROOT_PASSWORD=pass
+        volumes:
+            - ${LOCAL_PATH}/mongodb:/data/db
+            - ${LOCAL_PATH}/mongodump:/dump

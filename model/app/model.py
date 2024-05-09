@@ -11,17 +11,18 @@ class Model(ShareModel):
 
     @method_task_decorator
     def run_predictor(self, id: str, ini_date: datetime, days: int,
-                      compare_mode: bool):
+                      compare_mode: bool, update: bool):
         for pdt in self.pdts:
             if pdt.id == id:
-                self.view.on_event(f'Running predictor \'{id}\'')
+                ini_date_f = ini_date.strftime('%d-%m-%Y')
+                self.view.on_event(f'Running predictor \'{id}\' (ini_date = {ini_date_f}, days = {days}, update = {update})')
                 try:
-                    res = pdt.run(ini_date, days, compare_mode)
+                    res = pdt.run(ini_date, days, compare_mode, update)
+                    if res is None:
+                        self.view.on_success(f'Predictor \'{id}\' has finished: results saved in database')
+                    else:
+                        self.view.on_success(f'Predictor \'{id}\' has finished: results saved in {res}')
                 except PredictorError as e:
                     self.view.on_error(f'Predictor \'{id}\': {e}')
-                if res is None:
-                    self.view.on_success(f'Predictor \'{id}\' has finished: results saved in database')
-                else:
-                    self.view.on_success(f'Predictor \'{id}\' has finished: results saved in {res}')
                 break
     

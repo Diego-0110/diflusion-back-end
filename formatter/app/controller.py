@@ -6,7 +6,7 @@ import consts.config as config
 
 class Controller(ShareController):
     def __init__(self, model: Model, view: View):
-        super().__init__('daemon', model, view, [
+        super().__init__('formatter', model, view, [
             FormatCommand(model)
             # Add available commands
         ], config.HOST, config.CTRL_PORT)

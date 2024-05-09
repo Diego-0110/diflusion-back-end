@@ -14,13 +14,14 @@ class Data:
         pass
 
 class CSV(Data):
-    def __init__(self, filename, delimiter) -> None:
+    def __init__(self, filename, delimiter = ',', encoding = 'utf8') -> None:
         super().__init__(filename)
         self.delimiter = delimiter
+        self.encoding = encoding
     
     def read_all(self, condition: FunctionType = lambda x: x):
         res = []
-        with open(self.filename, 'r', newline='', encoding='utf8') as file:
+        with open(self.filename, 'r', newline='', encoding=self.encoding) as file:
             data = csv.DictReader(file, delimiter=self.delimiter)
             count = 0
             for row in data:
@@ -34,7 +35,7 @@ class CSV(Data):
     
     def write_all(self, data_list: list[dict]):
         fieldnames = list(data_list[0].keys())
-        with open(self.filename, 'w', newline='', encoding='utf8') as file:
+        with open(self.filename, 'w', newline='', encoding=self.encoding) as file:
             writer = csv.DictWriter(file, fieldnames=fieldnames)
             writer.writeheader()
             writer.writerows(data_list)

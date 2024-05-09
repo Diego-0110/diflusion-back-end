@@ -10,7 +10,6 @@ LOG_PORT = int(os.getenv('DAEMON_LOG_PORT'))
 LOG_PATH = os.getenv('DAEMON_LOG_PATH')
 
 # Input/Output file paths
-INPUT_PATH = os.getenv('INPUT_PATH')
 OUTPUT_PATH = os.getenv('OUTPUT_PATH')
 
 # Database

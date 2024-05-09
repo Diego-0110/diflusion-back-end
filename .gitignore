@@ -7,5 +7,7 @@ __pycache__
 !_common/*
 # Ignore .env file
 .env
+production.env
+compose.env
 # Ignore VS Code files
 .vscode

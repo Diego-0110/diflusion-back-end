@@ -1,6 +1,6 @@
 from utils.data import JSON, Excel
 from utils.scripts import cast, hash_from_dict, noneless_dict, clean_geopoly, \
-    value_or_none as vn, schema_geopoint, schema_geopoly
+    value_or_none as vn, schema_geopoint, schema_geopoly, country_code_A3_to_A2
 import os
 import requests
 import consts.config as config
@@ -36,29 +36,34 @@ class Formatter:
         JSON(filename).write_all(data_list)
 
     def run(self) -> tuple[int, int]:
-        # TODO error handling
         try:
             data_list = self.read_data()
-        except Exception:
-            raise FormatterError('Error while reading data')
+        except Exception as e:
+            raise FormatterError(f'Error while reading data: {e}')
         try:
             formatted_list = []
             invalid_data_count = 0
             for data in data_list:
                 f_data = self.format_data(data)
                 f_data = noneless_dict(f_data)
-                f_data['id'] = self.generate_id(f_data)
+                try:
+                    f_data['id'] = self.generate_id(f_data)
+                except Exception as e:
+                    FormatterError(f'Error while generating the id: {e}')
+                    invalid_data_count += 1
+                    continue
                 try:
                     self.schema.validate(f_data)
                 except SchemaError as se:
                     invalid_data_count += 1
+                    continue
                 formatted_list.append(f_data)
-        except Exception:
-            raise FormatterError('Error while formatting data')
+        except Exception as e:
+            raise FormatterError(f'Error while formatting data: {e}')
         try:
             self.save(formatted_list)
-        except Exception:
-            raise FormatterError('Error while saving formatted data')
+        except Exception as e:
+            raise FormatterError(f'Error while saving formatted data: {e}')
         return (len(formatted_list), invalid_data_count)
 
 
@@ -85,7 +90,8 @@ class OutbreaksFmt(Formatter):
     
     def pre_filter(self, data: dict):
         return (data.get('disease_id') in [584, 585, 561, 573, 578] or
-                data.get('disease_eng') == 'High pathogenicity avian influenza viruses (poultry) (Inf. with)') and \
+                (data.get('disease_eng') == 'High pathogenicity avian influenza viruses (poultry) (Inf. with)' or
+                data.get('disease_eng') == 'Influenza A viruses of high pathogenicity (Inf. with) (non-poultry including wild birds) (2017-)')) and \
                 data.get('region') == 'Europe' # TODO consts
 
     def read_data(self) -> list[dict]:
@@ -99,8 +105,25 @@ class OutbreaksFmt(Formatter):
             return 2 # Captive
         return 1 # Wild
     
-    def _get_report_date(self, days: int) -> int:
-        return int((self._ref_date + datetime.timedelta(days=days)).timestamp())
+    def _get_report_date(self, date_str: str) -> int:
+        if '/' in date_str:
+            try:
+                date = datetime.datetime.strptime(date_str, '%d/%m/%Y %H:%M:%S')
+            except Exception:
+                try:
+                    date = datetime.datetime.strptime(date_str, '%d/%m/%Y')
+                except Exception:
+                    return None
+        else:
+            try:
+                date = datetime.datetime.strptime(date_str, '%Y-%m-%d %H:%M:%S')
+            except Exception:
+                try:
+                    date = datetime.datetime.strptime(date_str, '%Y-%m-%d')
+                except Exception:
+                    return None
+        # (self._ref_date + datetime.timedelta(days=days))
+        return int(date.timestamp())
 
     def format_data(self, data: dict) -> dict:
         res = {
@@ -111,11 +134,11 @@ class OutbreaksFmt(Formatter):
                 'coordinates': [cast(data['Longitude'], float),
                        cast(data['Latitude'], float)]
             },
-            'city': vn(data['level3_name'], str),
+            # 'city': vn(data['level3_name'], str),
             'adminDivNUT1': vn(data['level3_name'], str),
-            'country': vn(data['iso_code'], str), # TODO converto to alpha-1
+            'country': country_code_A3_to_A2(vn(data['iso_code'], str)),
             'region': vn(data['region'], str),
-            'reportDate': self._get_report_date(cast(data['Reporting_date'], int)),
+            'reportDate': self._get_report_date(cast(data['Reporting_date'], str)),
             'species': vn(data['Species'], str), # TODO generic values (Birds, ...)
             'animalType': self._get_animal_type(cast(data['is_wild'], bool),
                                                 data['wild_type']),
@@ -155,13 +178,10 @@ class WeatherFmt(Formatter):
             api_params['ll'] = f'{lat},{lon}'
             response = requests.get(api_url, api_params)
             if response.status_code != 200:
-                # print(f'{station['id']}: code error')
                 continue
             api_data = response.json()
             if 'error' in api_data:
-                # print(f'{station['id']}: {api_data['error']}')
                 continue
-            # print(f'{station['id']}: success')
             api_data['coords'] = [lon, lat]
             res.append(api_data)
         return res

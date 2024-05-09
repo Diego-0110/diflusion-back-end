@@ -2,7 +2,7 @@ from utils.data import JSON
 import consts.config as config
 from utils.db import MongoDB
 from pymongo import collection
-from utils.scripts import rename_list_dict
+from utils.scripts import rename_list_dict, sub_dict
 import os
 
 class UpdaterError(Exception):
@@ -20,44 +20,46 @@ class Updater:
             mongo_client = MongoDB().get_client(config.MODEL_DB_URL)
             mongo_db = mongo_client[config.MODEL_DB_NAME]
             return mongo_db[self.id]
-        except Exception:
-            raise UpdaterError(f'Error while starting connection to {config.MODEL_DB_NAME}')
+        except Exception as e:
+            raise UpdaterError(f'Error while starting connection to {config.MODEL_DB_NAME}: {e}')
     
     def get_web_session(self) -> collection.Collection:
         try:
             mongo_client = MongoDB().get_client(config.WEB_DB_URL)
             mongo_db = mongo_client[config.WEB_DB_NAME]
             return mongo_db[self.id]
-        except Exception:
-            raise UpdaterError(f'Error while starting connection to {config.WEB_DB_NAME}')
+        except Exception as e:
+            raise UpdaterError(f'Error while starting connection to {config.WEB_DB_NAME}: {e}')
 
     def update_model_db(self, data_list: list[dict], updt_dupl: bool) -> int:
         coll = self.get_model_session()
+        db_ids = list(coll.find({
+            '_id': {'$in': [data['_id'] for data in data_list]}}))
+        db_ids = [d['_id'] for d in db_ids]
+        uniq_db_data = [d for d in data_list if d['_id'] not in db_ids]
+        if uniq_db_data:
+            coll.insert_many(uniq_db_data)
         if updt_dupl:
-            # TODO update
-            return 0
-        else:
-            db_ids = list(coll.find({
-                '_id': {'$in': [data['_id'] for data in data_list]}}))
-            db_ids = [d['_id'] for d in db_ids]
-            uniq_db_data = [d for d in data_list if d['_id'] not in db_ids]
-            if uniq_db_data:
-                coll.insert_many(uniq_db_data)
-            return len(db_ids)
+            dups_db_data = [d for d in data_list if d['_id'] in db_ids]
+            for data in dups_db_data:
+                coll.update_one({'_id': data['_id']},
+                                {'$set': sub_dict(data, [k for k in data if k != '_id'])})
+        return len(db_ids)
 
     def update_web_db(self, data_list: list[dict], updt_dupl: bool) -> int:
         coll = self.get_web_session()
+        db_ids = list(coll.find({
+            '_id': {'$in': [data['_id'] for data in data_list]}}))
+        db_ids = [d['_id'] for d in db_ids]
+        uniq_db_data = [d for d in data_list if d['_id'] not in db_ids]
+        if uniq_db_data:
+            coll.insert_many(uniq_db_data)
         if updt_dupl:
-            # TODO update
-            return 0
-        else:
-            db_ids = list(coll.find({
-                '_id': {'$in': [data['_id'] for data in data_list]}}))
-            db_ids = [d['_id'] for d in db_ids]
-            uniq_db_data = [d for d in data_list if d['_id'] not in db_ids]
-            if uniq_db_data:
-                coll.insert_many(uniq_db_data)
-            return len(db_ids)
+            dups_db_data = [d for d in data_list if d['_id'] in db_ids]
+            for data in dups_db_data:
+                coll.update_one({'_id': data['_id']},
+                                {'$set': sub_dict(data, [k for k in data if k != '_id'])})
+        return len(db_ids)
 
     def filter_unique(self, data_list: list[dict]) -> list[dict]:
         ids = []
@@ -71,8 +73,8 @@ class Updater:
     def run(self, updt_dupl = False):
         try:
             data_list = self.read_data()
-        except Exception:
-            raise UpdaterError(f'Error while reading input data')
+        except Exception as e:
+            raise UpdaterError(f'Error while reading input data: {e}')
         # Remove duplicate data and count
         dup_num = len(data_list)
         data_list = self.filter_unique(data_list)
@@ -83,14 +85,14 @@ class Updater:
             dup_m_num = self.update_model_db(data_list, updt_dupl)
         except UpdaterError as e:
             raise e
-        except Exception:
-            raise UpdaterError(f'Error while updating model database')
+        except Exception as e:
+            raise UpdaterError(f'Error while updating model database: {e}')
         try:
             dup_w_num = self.update_web_db(data_list, updt_dupl)
         except UpdaterError as e:
             raise e
-        except Exception:
-            raise UpdaterError(f'Error while updating web database')
+        except Exception as e:
+            raise UpdaterError(f'Error while updating web database {e}')
         return (dup_num, dup_m_num, dup_w_num)
 
 class OutbreaksUpdt(Updater):
@@ -118,5 +120,3 @@ class BirdsUpdt(Updater):
 
     def update_web_db(self, data_list: list[dict], updt_dupl: bool) -> int:
         pass
-
-# TODO class RiskRoutesUpdt

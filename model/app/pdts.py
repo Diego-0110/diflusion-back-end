@@ -1,19 +1,20 @@
 from utils.db import MongoDB
+from utils.scripts import centroid_geopoly, idw_shepard, hash_from_dict
 import consts.config as config
-from pymongo import database
 
-import time
-import math
+from pymongo import database
 from datetime import datetime, timedelta
 from calendar import monthrange
-from utils.scripts import centroid_geopoly, idw_shepard
+import os
+import time
+import math
+import uuid
+import pandas as pd
 
 class PredictorError(Exception):
     pass
 
 class Predictor():
-    # TODO check there are enough data to run the predictor (custom error)
-    # TOODO parameters
     def __init__(self, pred_id: str):
         self.id = pred_id
 
@@ -48,32 +49,63 @@ class Predictor():
         h_lvl_coll = mongo_db_h['riskLevels']
         h_lvl_coll.insert_many(levels_list)
 
-    def run(self, ini_date: datetime, days: int, compare_mode = False):
+    def exists_prediction(self, ini_date: datetime, days: int):
+        fin_date = ini_date + timedelta(days=days-1)
+        mongo_db_w = self.get_web_db_session()
+        w_lvl_coll = mongo_db_w['riskLevels']
+        return len(list(w_lvl_coll.find({'fromDate': ini_date.timestamp(),
+                         'toDate': fin_date.timestamp()}))) > 0
+
+    def delete_existing_preds(self, ini_date: datetime, days: int):
+        fin_date = ini_date + timedelta(days=days-1)
+        mongo_db_w = self.get_web_db_session()
+        w_lvl_coll = mongo_db_w['riskLevels']
+        w_rts_coll = mongo_db_w['riskRoutes']
+        filter_dict = {'fromDate': ini_date.timestamp(),
+                         'toDate': fin_date.timestamp()}
+        w_lvl_coll.delete_many(filter_dict)
+        w_rts_coll.delete_many(filter_dict)
+        mongo_db_h = self.get_history_db_session()
+        h_lvl_coll = mongo_db_h['riskLevels']
+        h_lvl_coll.delete_many(filter_dict)
+
+    def run(self, ini_date: datetime, days: int, compare_mode = False, update = False):
+        if not compare_mode and self.exists_prediction(ini_date, days):
+            if not update:
+                raise PredictorError(f'Prediction already exists')
+            else:
+                self.delete_existing_preds(ini_date, days)
         mongo_db = self.get_model_db_session()
         try:
             data_list = self.get_data(mongo_db, ini_date, days)
-        except Exception:
-            raise PredictorError(f'Error while getting data from model database')
+        except Exception as e:
+            raise PredictorError(f'Error while getting data from model database: {e}')
         try:
             (levels_list, routes_list) = self.get_prediction(data_list, ini_date, days)
-        except Exception:
-            raise PredictorError(f'Error while getting prediction')
+        except Exception as e:
+            raise PredictorError(f'Error while getting prediction: {e}')
         try:
             if not compare_mode:
-                self.save(levels_list, routes_list) # TODO not save mode
+                self.save(levels_list, routes_list)
             else:
-                return ''
-        except Exception:
-            raise PermissionError(f'Error while saving results')
+                df = pd.DataFrame.from_dict(levels_list)
+                f_date = ini_date.strftime('%d-%m-%Y')
+                preds_filename = f'{f_date}-{days}-{uuid.uuid4().hex}.xlsx'
+                df.to_excel(os.path.join(config.PREDS_PATH, preds_filename))
+                return preds_filename
+        except Exception as e:
+            raise PredictorError(f'Error while saving results: {e}')
 
 DEFAULT_MIG_PROB = [0.5 for i in range(0, 48)]
 class PredictorA(Predictor):
     def __init__(self):
         super().__init__('A')
         self.config = { # TODO move to config
-            'outbreakDistance': 50000,
-            'outbreakDays': 180,
+            'outbreakDistance': 40000,
+            'outbreakDays': 120,
             'travelDays': 7,
+            'minTempPoints': 50,
+            'minDaysPercentage': 0.9,
             'tempThreshold': 0.5,
             'levelThresholds': [
                 (lambda x: x < 1, None),
@@ -173,6 +205,7 @@ class PredictorA(Predictor):
                         }
                     }
                 ]))
+
     def _get_mean_temp(self, db: database.Database, region: dict,
                        ini_date: datetime, days: int) -> int:
         min_date = math.floor(ini_date.timestamp())
@@ -203,27 +236,47 @@ class PredictorA(Predictor):
                 'distanceField': 'd'
             }
         }])
-        # TODO raise when not enough data
-        weather_tuple_list = []
+        weather_grouped = {}
         for w in weather:
-            mean = sum([pred['minTemperature'] for pred in w['predictions']])
-            mean = mean / days
-            weather_tuple_list.append((w['d'], mean))
+            w_hash = hash_from_dict(w['loc'])
+            if not weather_grouped.get(w_hash):
+                weather_grouped[w_hash] = [w]
+            else:
+                weather_grouped[w_hash].append(w)
+        if len(weather_grouped) < self.config['minTempPoints']:
+            raise PredictorError(f'Not enough weather points (min: {self.config['minTempPoints']})')
+        fin_date = ini_date + timedelta(days=days-1)
+        weather_tuple_list = []
+        for w_key in weather_grouped:
+            w_list: list = weather_grouped[w_key]
+            w_list.sort(key=lambda x: x['fromDate'])
+            temp_list = []
+            for index, w in enumerate(w_list):
+                f_date = w['fromDate']
+                to_date = w['toDate']
+                fn_date = w_list[index + 1]['fromDate'] if index < len(w_list) - 1 else None
+                d_iter = ini_date.timestamp() if ini_date.timestamp() > f_date else f_date
+                while d_iter <= fin_date.timestamp() and d_iter <= to_date and (not fn_date or d_iter < fn_date):
+                    delta_index = datetime.fromtimestamp(d_iter) - datetime.fromtimestamp(f_date)
+                    temp_list.append(w['predictions'][delta_index.days]['minTemperature'])
+                    d_iter = (datetime.fromtimestamp(d_iter) + timedelta(days=1)).timestamp()
+            
+            if len(temp_list) / days >= self.config['minDaysPercentage']:
+                distance = w_list[0]['d']
+                mean = sum(temp_list) / len(temp_list)
+                weather_tuple_list.append((distance, mean))
+        if len(weather_tuple_list) < self.config['minTempPoints']:
+            raise PredictorError(f'Not enough weather points (min: {self.config['minTempPoints']})')
         return idw_shepard(centroid, weather_tuple_list, distance=True)
         
 
     def get_data(self, db: database.Database, ini_date: datetime,
                        days: int) -> list[dict]:
-        mongo_db = self.get_model_db_session()
-        t = time.localtime()
-        current_time = time.strftime("%H:%M:%S", t)
-        print(f' {current_time} regions...')
         # MIGRATONS -> REGIONS
         regions = self._get_regions_migs(db)
+        if not regions:
+            raise PredictorError('Not enough data: regions')
         data_by_reg = {}
-        t = time.localtime()
-        current_time = time.strftime("%H:%M:%S", t)
-        print(f' {current_time} risk routes...')
         # OUTBREAKS -- MIGRATIONS + BIRDS -> REGIONS
         # For every region search for every migration outbreaks near to x meters
         #   at most to origin of the migration.
@@ -243,36 +296,38 @@ class PredictorA(Predictor):
         for reg_key in data_by_reg:
             data_by_reg[reg_key]['regionId'] = reg_key
             res.append(data_by_reg[reg_key])
-        t = time.localtime()
-        current_time = time.strftime("%H:%M:%S", t)
-        print(f' {current_time} end...')
         return res
     
     def get_prediction(self, data_list: list[dict], ini_date: datetime,
                        days: int) -> tuple[list[dict], list[dict]]:
-        # { regionId: x, riskRoutes: x, temperature: x}
-        fin_date = ini_date + timedelta(days=days)
+        fin_date = ini_date + timedelta(days=days-1)
         risk_routes = []
         for region in data_list:
             for mig in region['riskRoutes']:
                 outbreaks = [o['_id'] for o in mig['outs']]
-                risk_routes.append({
+                risk_route = {
                     'regionId': region['regionId'],
                     'fromDate': math.floor(ini_date.timestamp()),
                     'toDate': math.floor(fin_date.timestamp()),
                     'migrationId': mig['_id'],
-                    'outbreaks': outbreaks
-                })
+                    'outbreakIds': outbreaks
+                }
+                risk_route['_id'] = hash_from_dict(risk_route)
+                risk_routes.append(risk_route)
         risk_levels = []
         for region in data_list:
             if not region['riskRoutes']:
-                risk_levels.append({
+                risk_dict = {
                     'regionId': region['regionId'],
+                    'temperature': region['temperature'],
                     'fromDate': math.floor(ini_date.timestamp()),
                     'toDate': math.floor(fin_date.timestamp()),
                     # 'level': 0,
                     'value': 0
-                })
+                }
+                risk_dict['_id'] = hash_from_dict(risk_dict, ['regionId',
+                                                        'fromDate', 'toDate'])
+                risk_levels.append(risk_dict)
                 continue
             # Temperature Weight
             temperature_w = 29.94
@@ -297,13 +352,13 @@ class PredictorA(Predictor):
             risk_value = contribution * temperature_w
             risk_dict = {
                 'regionId': region['regionId'],
+                'temperature': region['temperature'],
                 'fromDate': math.floor(ini_date.timestamp()),
                 'toDate': math.floor(fin_date.timestamp()),
                 'value': risk_value
             }
-            if risk_value > 150:
-                print(f'riskvalue {risk_value}:')
-                print(f'mt: {region["temperature"]}, tw: {temperature_w}, c: {contribution}')
+            risk_dict['_id'] = hash_from_dict(risk_dict, ['regionId',
+                                                          'fromDate', 'toDate'])
             for (thres_func, value) in self.config['levelThresholds']:
                 if thres_func(risk_value):
                     if value is not None:

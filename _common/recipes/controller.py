@@ -100,7 +100,7 @@ class ShareController(TemplateController):
     def server_send_response(self, msg: str):
         try:
             conns = ConnsHandler()
-            conns.get_conn('Control').try_send_msg(msg)
+            conns.get_conn('control').try_send_msg(msg)
         except ConnectionClosedError:
             pass
 
@@ -118,6 +118,6 @@ class ShareController(TemplateController):
     
     def on_start(self):
         conns = ConnsHandler()
-        ctrl_server = Server('Control', self.ctrl_host, self.ctrl_port,
+        ctrl_server = Server('control', self.ctrl_host, self.ctrl_port,
                              self.server_process_cmd)
         conns.add(ctrl_server)
