@@ -6,7 +6,7 @@ class FormatCommand(Command):
         super().__init__('format', 'format one or more types of data')
         self.model = model
         self.parser.add_argument('ids', choices=[f.data_id for f in self.model.fmts],
-                                 nargs='+')
+                                 nargs='+', help='types of data available')
 
     def run(self, args):
         self.model.format_data(args.ids)

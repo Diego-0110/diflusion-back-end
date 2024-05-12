@@ -15,7 +15,8 @@ class Model(ShareModel):
         for pdt in self.pdts:
             if pdt.id == id:
                 ini_date_f = ini_date.strftime('%d-%m-%Y')
-                self.view.on_event(f'Running predictor \'{id}\' (ini_date = {ini_date_f}, days = {days}, update = {update})')
+                ini_date_ts = int(ini_date.timestamp())
+                self.view.on_event(f'Running predictor \'{id}\' (ini_date = {ini_date_f} ({ini_date_ts}), days = {days}, compare_mode = {compare_mode} update = {update})')
                 try:
                     res = pdt.run(ini_date, days, compare_mode, update)
                     if res is None:

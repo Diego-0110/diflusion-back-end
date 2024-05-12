@@ -87,8 +87,14 @@ services:
         image: mongodb/mongodb-community-server:6.0-ubi8
         restart: on-failure:2
         environment:
-            - MONGODB_INITDB_ROOT_USERNAME=user
-            - MONGODB_INITDB_ROOT_PASSWORD=pass
+            - MONGODB_INITDB_ROOT_USERNAME=${DB_USER}
+            - MONGODB_INITDB_ROOT_PASSWORD=${DB_PASSWORD}
         volumes:
             - ${LOCAL_PATH}/mongodb:/data/db
             - ${LOCAL_PATH}/mongodump:/dump
+    
+    web:
+        build:
+            context: ${WEB_PATH}
+        ports:
+            - 3000:3000

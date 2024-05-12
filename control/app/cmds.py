@@ -7,14 +7,16 @@ from utils.conn import ConnsHandler
 
 class SendCmd(Command):
     def __init__(self, model: Model, ctrl: TemplateController):
-        super().__init__('send', 'send a command to a connection with the option of specify the T time (default: time now) and the frequency D days (default: not repeat)')
+        super().__init__('send', 'send a command to another terminal')
         self.model = model
         self.ctrl = ctrl
         self.parser.add_argument('-id', choices=[c.id for c in self.model.ctrl_conns],
-                                 required=True)
+                                 required=True, help='id of the connection which the command will be sent to')
         self.parser.add_argument('--log-mode', default=False,
-                                 action='store_true', dest='log_mode')
-        self.parser.add_argument('-cmd', default=[], nargs='+', required=True)
+                                 action='store_true', dest='log_mode',
+                                 help='if it\'s set, log mode is activated right before sending the command')
+        self.parser.add_argument('-cmd', default=[], nargs='+', required=True,
+                                 help='command to send')
 
     def run(self, args):
         cmd_str = ' '.join([*args.cmd, *args._rest])
@@ -32,11 +34,13 @@ class SendCmd(Command):
 
 class CronCmd(Command):
     def __init__(self, model: Model, ctrl: TemplateController):
-        super().__init__('cron', 'executes a command at a certain time and optionally every DAYS days')
+        super().__init__('cron', 'executes a command at a certain time and optionally every x days')
         self.model = model
         self.ctrl = ctrl
-        self.parser.add_argument('-dtime', required=True, type=str)
-        self.parser.add_argument('-days', default=None, type=int)
+        self.parser.add_argument('-dtime', required=True, type=str,
+                                 help='day and time when the command will be executed (ex.: 01-01-2024-14:00)')
+        self.parser.add_argument('-days', default=None, type=int,
+                                 help='if it\'s specified, the command will be executed every <DAYS> days')
     
     def run(self, args):
         if args.days is not None and args.days < 1:
@@ -45,6 +49,7 @@ class CronCmd(Command):
             time_arg = datetime.strptime(args.dtime, '%d-%m-%Y-%H:%M')
         except ValueError:
             raise RunCmdError('-f should have the format dd-mm-YYYY-HH:MM')
+        print('Insert the command to schedule:')
         cmd_list = input('> ').split()
         cmd_name = cmd_list[0]
         cmd_args_list = cmd_list[1:]

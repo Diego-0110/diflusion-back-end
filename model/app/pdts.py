@@ -101,8 +101,8 @@ class PredictorA(Predictor):
     def __init__(self):
         super().__init__('A')
         self.config = { # TODO move to config
-            'outbreakDistance': 40000,
-            'outbreakDays': 120,
+            'outbreakDistance': 30000,
+            'outbreakDays': 90,
             'travelDays': 7,
             'minTempPoints': 50,
             'minDaysPercentage': 0.9,
@@ -158,6 +158,7 @@ class PredictorA(Predictor):
         outs_coll = db['outbreaks']
         outs_coll.create_index({'loc': '2dsphere'})
         outs_coll.create_index({'reportDate': 1})
+        outs_coll.create_index({'reportDate': -1})
         return list(mig_coll.aggregate([
                     { # Only migrations with destiny 'region'
                     '$match': {
@@ -209,11 +210,13 @@ class PredictorA(Predictor):
     def _get_mean_temp(self, db: database.Database, region: dict,
                        ini_date: datetime, days: int) -> int:
         min_date = math.floor(ini_date.timestamp())
-        max_date = math.floor((ini_date + timedelta(days=days)).timestamp())
+        max_date = math.floor((ini_date + timedelta(days=days-1)).timestamp())
         weather_coll = db['weather']
         weather_coll.create_index({'loc': '2dsphere'})
         weather_coll.create_index({'fromDate': 1})
+        weather_coll.create_index({'fromDate': -1})
         weather_coll.create_index({'toDate': 1})
+        weather_coll.create_index({'toDate': -1})
         centroid = centroid_geopoly(region['geo']['coordinates'],
                                     region['geo']['type'])
         weather = weather_coll.aggregate([{
@@ -343,9 +346,9 @@ class PredictorA(Predictor):
             for mig in region['riskRoutes']:
                 bird = mig['bird']
                 if bird:
-                    prob_mig = bird[0]['migrationProb'][year_week]
+                    prob_mig = bird[0]['migrationProb'][year_week - 1]
                 else:
-                    prob_mig = DEFAULT_MIG_PROB[year_week]
+                    prob_mig = DEFAULT_MIG_PROB[year_week - 1]
                 for out in mig['outs']:
                     animal_prob = self.config['animalTypeProb'][out['animalType']]
                     contribution += prob_mig * animal_prob

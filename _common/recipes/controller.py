@@ -9,9 +9,9 @@ class ConnectionCmd(Command):
     def __init__(self, ctrl):
         super().__init__('conn', 'show the status of the connections or restart one or more connections')
         self.ctrl = ctrl
-        self.parser.add_argument('cmd', choices=['status', 'restart'])
-        conns = ConnsHandler()
-        self.parser.add_argument('-ids', default=[], nargs='+')
+        self.parser.add_argument('cmd', choices=['status', 'restart'],
+                                 help='action to perform with the IDS')
+        self.parser.add_argument('-ids', default=[], nargs='+', help='ids of connections (default: all)')
 
     def status_func(self, args) -> str:
         conns = ConnsHandler()
