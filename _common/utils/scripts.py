@@ -148,7 +148,7 @@ def schema_len_gt(length: int) -> Schema:
 
 # Other
 def points_distance(point1: list[float], point2: list[float]):
-    return 1
+    return 1 # TODO define
 
 def idw_shepard(ref_point: list[float],
                 points: list[tuple[list[float] | float, float]],
