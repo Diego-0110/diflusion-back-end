@@ -2,7 +2,7 @@
 
 ## Introduction
 
-
+This is the 'back-end' part of the DiFlusion application for predicting risks of avian influenza outbreaks in Spain.
 
 ## Local deployment (for development)
 
@@ -187,9 +187,9 @@ docker compose down
 
 ### Common tasks
 
-#### Access to 'control' terminal or any terminal
+#### Access to 'control' module's terminal or any module
 
-To Access to a terminal and interact with the CLI ('control', 'daemon', ...) use:
+To Access to a terminal of a certain module and interact with the CLI ('control', 'daemon', ...) use:
 
 ```
 docker attach <container-name>
@@ -230,12 +230,12 @@ docker exec -i <mongodb-container-name> /usr/bin/mongodump --uri mongodb://<user
 docker exec -i <mongodb-container-name> /usr/bin/mongorestore --uri mongodb://<username>:<password>@mongodb --gzip --archive < <path>/mongodb.tar.gz
 ```
 
-Restore specific collection:
+#### Restore specific a collection
 ```
 mongorestore --db=diflusionMDB --collection=weather --uri=mongodb://user:pass@mongodb /data/db/dumpm/diflusionMDB/weather.bson
 ```
 
-Restore from JSON:
+#### Restore from JSON
 ```
 docker cp ~/Downloads/dump <container_name>:/dump
 ```
@@ -246,15 +246,15 @@ docker exec -i diflusion-back-end-mongodb-1 /usr/bin/mongoimport --authenticatio
 
 ## Usage guide
 
-Every terminal ('control', 'daemon', ...) has an interactive CLI (Command Line Interface) where you can run commands.
+Every module ('control', 'daemon', ...) has an interactive CLI (Command Line Interface) where you can run commands.
 
-'control' terminal by default is in CLI mode, but the rest of the terminals are in log mode. You can escape of log mode entering the letter 'q'.
+'control' module by default is in CLI mode, but the rest of the terminals are in log mode. You can escape of log mode entering the letter 'q'.
 
 > Note: you can always resort to `-h` option to get help in the CLI. Examples: `-h` (show available commands and its descriptions), `conn -h` (show usage details of `conn` command).
 
 ### Input files
 
-The 'formatter' terminal read files from `INPUT_PATH`, the next files should exist in `INPUT_PATH`:
+The 'formatter' module read files from `INPUT_PATH`, the next files should exist in `INPUT_PATH`:
 
 - `raw_migrations.xlsx`: file with migrations and birds.
 - `raw_outbreaks.xlsx`: file with outbreaks.
@@ -270,36 +270,40 @@ This commands are shared in all terminals.
         - `conn status`: show the status of all connections.
         - `conn restart -ids model model_log`: restart the connections 'model' and 'model_log'.
         - `conn restart`: restart all the connections.
-- `log-mode`: change to log mode, where you can see all the logs updating in real time (in 'control' terminal also the logs from other terminals). Exit (return to CLI) entering character 'q'.
-- `quit`: exit the terminal safely (close connections and running threads).
+- `log-mode`: change to log mode, where you can see all the logs updating in real time (in 'control' module also the logs from other terminals). Exit (return to CLI) entering character 'q'.
+- `quit`: exit the module's terminal safely (close connections and running threads).
 
 ### Control's commands
 
-Specific commands for 'control' terminal.
+Specific commands for 'control' module.
 
-- `send`: send a command (`-cmd`) to a specific terminal (`-id`). Optionally, you can add `--log-mode` flag to activate log mode right before sending the command.
+- `send`: send a command (`-cmd`) to a specific module (`-id`). Optionally, you can add `--log-mode` flag to activate log mode right before sending the command.
     - Examples:
-- `cron`: executes a command at a certain date and time (`dtime`). Optionally, you can set `-days` value (>0 and integer) and the command will be executed every x days.
+        - `send -id formatter --log-mode -cmd format birds`: activates log mode and then send the command `format birds` to 'formatter' module.
+- `cron`: executes a command at a certain date and time (`-dtime`). Optionally, you can set `-days` value (>0 and integer) and the command will be executed every x days.
     - Examples:
-- `log`:
+        - `cron -dtime 01-01-2024-14:00 -days 7`: wait the user to introduce a command to execute it at 14:00 every 7 days since 01-01-2024.
 
 ### Formatter's commands
 
-Specific commands for 'formatter' terminal.
+Specific commands for 'formatter' module.
 
 - `format`: format one or more types of data.
     - Examples:
+        - `format birds migrations`: format the data 'birds' and 'migrations'.
 
 ### Daemon's commands
 
-Specific commands for 'daemon' terminal.
+Specific commands for 'daemon' module.
 
 - `update`: update one or more types of data in the database. Optionally, if you add `--update-duplicates` flag, duplicate data (same id) will be updated.
     - Examples:
+        - `update birds --update-duplicates`: update the data 'birds' updating the duplicates.
 
 ### Model's commands
 
-Specific commands for 'model' terminal.
+Specific commands for 'model' module.
 
-- `predict`: run a predictor starting from a certain date (`-date`) and for x days (`-days`: optional and 7 by default). Optionally, you can save prediction in a spreadsheet instead of saving to the database (default) (`--compare-mode` flag) and update prediction when there's already a prediction in the same date range.
+- `predict`: run a predictor for an interval of x days (`-days`: optional and 7 by default) starting from a certain date (`-date`: optional and today date by default). Optionally, you can save prediction in a spreadsheet instead of saving to the database (default) (`--compare-mode` flag) and\or update prediction (`--update` flag) when there's already a prediction in the same date range.
     - Examples:
+        - `predict A --compare-mode -days 3`: run the predictor 'A' for and interval of 3 days starting today and save the results in a xlsx file.
