@@ -155,7 +155,7 @@ WEB_DB_NAME=diflusionWDB
 HISTORY_DB_URL=mongodb://<user>:<password>@mongodb
 HISTORY_DB_NAME=diflusionHDB
 # API keys
-WEATHER_API_KEY=<API-key> # TuTiempo API key
+WEATHER_API_KEY=<API-key> # TuTiempo API key: https://api.tutiempo.net/
 # Timezone
 TZ=Europe/Madrid # Example
 ```
