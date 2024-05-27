@@ -213,20 +213,27 @@ With this you can see all databases (`show dbs`), access to a database (`use <da
 Dump the whole database in the share volume:
 
 ```
-docker exec -it <mongodb-container-name> bash
-/usr/bin/mongodump --uri mongodb://<username>:<password>@mongodb --gzip --archive > /dump/mongodb.tar.gz
+docker exec -it <mongodb-container-name> /usr/bin/mongodump --uri=mongodb://<username>:<password>@mongodb --gzip --archive=/dump/mongodb.tar.gz
 ```
 
 Dump the whole database in a local path:
 
 ```
-docker exec -i <mongodb-container-name> /usr/bin/mongodump --uri mongodb://<username>:<password>@mongodb --gzip --archive > <path>/mongodb.tar.gz
+docker exec -i <mongodb-container-name> /usr/bin/mongodump --uri=mongodb://<username>:<password>@mongodb --gzip --archive > <path>/mongodb.tar.gz
 ```
 
 #### Restore the whole database
 
+Restore the whole database from a file in the share volume:
+
 ```
-docker exec -i <mongodb-container-name> /usr/bin/mongorestore --uri mongodb://<username>:<password>@mongodb --gzip --archive < <path>/mongodb.tar.gz
+docker exec -i <mongodb-container-name> /usr/bin/mongorestore --uri=mongodb://<username>:<password>@mongodb --gzip --archive=/dump/mongodb.tar.gz
+```
+
+Restore the whole database from a local file:
+
+```
+docker exec -i <mongodb-container-name> /usr/bin/mongorestore --uri=mongodb://<username>:<password>@mongodb --gzip --archive < <path>/mongodb.tar.gz
 ```
 
 #### Restore specific a collection
