@@ -173,10 +173,9 @@ docker pull node:18-alpine
 
 ### Deployment
 
-With the environment variables set in `compose.env` and `production.env` files and a copy of the 'diflusion-web' repository, you can deploy the whole application with the next commands:
+With the environment variables set in `compose.env` and `production.env` files and a copy of the 'diflusion-web' repository, you can deploy the whole application with the next command:
 
 ```
-docker compose build
 docker compose --env-file .\compose.env up -d
 ```
 
